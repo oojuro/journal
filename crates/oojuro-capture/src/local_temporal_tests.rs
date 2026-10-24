@@ -251,16 +251,52 @@ fn source_forks_cursor_sequence_cross_adapter_and_consent_refuse_without_progres
     );
 }
 #[test]
+fn healthy_policy_handoff_keeps_original_receipts_and_does_not_consult_policy_on_retry() {
+    struct Never;
+    impl Policy for Never {
+        fn refresh(&mut self) { panic!("retry refreshed the new policy"); }
+        fn decide(&mut self, _: &Rec, _: &str) -> Decision { panic!("retry reinterpreted input"); }
+    }
+    let f = Fixture::new();
+    let mut c = f.open(true);
+    let (bytes, first) = append(&mut c, "original", 1, "thinking", json!("WITHHELDTHOUGHT"));
+    let before = raw(&c);
+    let mut c = c.with_policy(Box::new(Never), "next-immutable-policy").unwrap();
+    assert_eq!(c.append_temporal(source(), &stream(), 0, &bytes, true).unwrap(), first);
+    assert_eq!(raw(&c), before);
+    assert_eq!(c.log.next_id(), 1);
+    let mut c = c.with_policy(Box::new(Mode(false)), "relaxed-next-1").unwrap();
+    let (next, receipt) = append(&mut c, "new", 2, "output", json!("FRESHOUTPUT λ\r\n\0終"));
+    assert_eq!(receipt.outcome.first_id, Some(1));
+    assert_eq!(c.log.batches().unwrap().last().unwrap().policy.policy_id, "relaxed-next-1");
+    assert_eq!(raw(&c), [before, next].concat());
+    assert!(c.search("WITHHELDTHOUGHT", 0, i64::MAX, 10).unwrap().is_empty());
+    assert_eq!(c.search("FRESHOUTPUT", 0, i64::MAX, 10).unwrap().len(), 1);
+}
+
+#[test]
+fn policy_handoff_rejects_invalid_identity_without_source_progress() {
+    for id in [String::new(), "x".repeat(129)] {
+        let f = Fixture::new();
+        let c = f.open(false);
+        assert!(matches!(c.with_policy(Box::new(Mode(true)), &id), Err(Error::Invalid(_))));
+        let c = f.open(false);
+        assert!(c.log.sources().next().is_none());
+        assert_eq!(c.log.next_id(), 1);
+    }
+}
+
+#[test]
 fn committed_projection_failure_recovers_exact_original_receipt() {
     let f = Fixture::new();
-    let mut c = f.open(false);
+    let mut c = f.open(true).with_policy(Box::new(Mode(false)), "relaxed-2").unwrap();
     c.fail_projection = true;
     let bytes = frame("original", 1, "output", json!("original committed"));
     let outcome = match c.append_temporal(source(), &stream(), 0, &bytes, true) {
         Err(Error::CommittedUnavailable(o)) => o,
         _ => panic!("missing committed failure"),
     };
-    drop(c);
+    assert!(c.with_policy(Box::new(Mode(false)), "cannot-revive").is_err());
     let mut c = f.open(true);
     let receipt = c
         .append_temporal(source(), &stream(), 0, &bytes, true)
@@ -307,7 +343,7 @@ fn crash_worker() {
     let f = Fixture {
         root: PathBuf::from(root),
     };
-    let mut c = f.open(false);
+    let mut c = f.open(true).with_policy(Box::new(Mode(false)), "relaxed-2").unwrap();
     c.append_temporal(
         source(),
         &stream(),

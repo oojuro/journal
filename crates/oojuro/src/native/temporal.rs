@@ -68,9 +68,10 @@ pub(super) fn run(root: &Path, args: &Arguments) -> Result<i32> {
     if !frozen.enabled() {
         return Err(Error::Stopped);
     }
-    drop(capture);
     let id = frozen.id.clone();
-    let mut capture = open(root, &config, &key, Box::new(frozen), &id)?;
+    let mut capture = capture
+        .with_policy(Box::new(frozen), &id)
+        .map_err(|_| Error::Authority)?;
     match capture.append_temporal(generation, &v.stream, v.cursor, v.frame.as_bytes(), true) {
         Ok(receipt) => {
             emit(&receipt, 4096)?;

@@ -242,6 +242,19 @@ impl LocalCapture {
         this.rebuild()?;
         Ok(this)
     }
+    /// Apply a caller-validated policy snapshot while retaining this healthy authority
+    /// and projection. The caller must use an immutable ID for the policy semantics.
+    /// Retained receipts are never reinterpreted; unfinished lines still require
+    /// their original policy ID before any further bytes can commit.
+    pub fn with_policy(mut self, policy: Box<dyn Policy>, policy_id: &str) -> Result<Self> {
+        self.ready()?;
+        if policy_id.is_empty() || policy_id.len() > 128 {
+            return Err(Error::Invalid("capture options"));
+        }
+        self.options.policy_id = policy_id.into();
+        self.policy = policy;
+        Ok(self)
+    }
     /// Reads only authorized parsed receipts. Current policy cannot reinterpret retained raw.
     pub fn rebuild(&mut self) -> Result<()> {
         self.projection = None;
