@@ -72,12 +72,16 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--sizes", default="1000,10000")
     parser.add_argument("--samples", type=int, default=20)
+    parser.add_argument("--fixture-cache", choices=["warm", "evict"], default="warm",
+                        help="evict requests POSIX_FADV_DONTNEED for synthetic root/cache/input files before each process")
     args = parser.parse_args()
     sizes = [int(size) for size in args.sizes.split(",")]
     if not sizes or any(size < 20 or size > 10000 for size in sizes):
         parser.error("sizes must be between 20 and 10000")
     if not 20 <= args.samples <= 100:
         parser.error("samples must be between 20 and 100")
+    if args.fixture_cache == "evict" and not hasattr(os, "posix_fadvise"):
+        parser.error("fixture eviction requires POSIX_FADV_DONTNEED")
     binaries = {name: path.resolve(strict=True) for name, path in
                 [("baseline", args.baseline), ("candidate", args.candidate)]}
     env = {key: value for key, value in os.environ.items()
@@ -86,6 +90,19 @@ def main():
                AWS_EC2_METADATA_DISABLED="true")
 
     def call(name, root, command, *options):
+        if args.fixture_cache == "evict":
+            paths = [root]
+            for flag in ["--cache", "--source", "--input"]:
+                if flag in options:
+                    paths.append(Path(options[options.index(flag) + 1]))
+            for path in paths:
+                for file in path.rglob("*") if path.is_dir() else [path]:
+                    if file.is_file() and not file.is_symlink():
+                        fd = os.open(file, os.O_RDONLY | os.O_NOFOLLOW)
+                        try:
+                            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                        finally:
+                            os.close(fd)
         start = time.perf_counter_ns()
         result = subprocess.run([str(binaries[name]), command, "--root", str(root),
                                  *map(str, options)], env=env, capture_output=True, timeout=60)
@@ -94,7 +111,10 @@ def main():
             raise RuntimeError(f"synthetic {name} {command} refused: {result.stderr.decode()}")
         return json.loads(result.stdout), elapsed
 
-    report = dict(schema=1, scope="synthetic local CLI subprocess wall time; warm OS cache",
+    report = dict(schema=1, scope="synthetic local CLI subprocess wall time",
+                  fixture_cache=args.fixture_cache,
+                  cache_description=("warm OS cache" if args.fixture_cache == "warm" else
+                                     "best-effort per-fixture POSIX_FADV_DONTNEED; binary/metadata/device caches uncontrolled"),
                   order=["baseline", "candidate", "candidate", "baseline"],
                   platform=platform.platform(), machine=platform.machine(),
                   binaries={name: dict(sha256=digest(path), bytes=path.stat().st_size)
@@ -177,7 +197,8 @@ def main():
                     timings["capture_append_one"].append(elapsed)
                     assert receipt["raw_end"] == len(original)
                 cache = run_dir / "lexical-cache"
-                call(name, captured, "search", "--query", token(0), "--cache", cache)
+                first_cache, cache_build_ms = call(name, captured, "search", "--query", token(0), "--cache", cache)
+                assert first_cache["cache"] == "Rebuilt"
                 for sample in range(args.samples):
                     index = sample * (size - 1) // (args.samples - 1)
                     stored, elapsed = call(name, captured, "get", "--id", index + 1)
@@ -197,6 +218,7 @@ def main():
                 assert restored.read_bytes() == original == source.read_bytes()
                 report["runs"].append(dict(size=size, order=number, binary=name,
                                           capture_initial_import_ms=import_ms,
+                                          capture_initial_cache_build_ms=cache_build_ms,
                                           record_storage=storage(root), capture_storage=storage(captured),
                                           capture_raw_sha256=hashlib.sha256(original).hexdigest(),
                                           correctness="sampled typed fields, exact retry ACK, original text, exact raw restoration, lexical IDs/scores, cross-binary reopen",

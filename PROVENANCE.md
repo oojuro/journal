@@ -11,7 +11,7 @@ usage documents and the original license notices accompany the source. Engine
 libraries were initially dependencies pinned to that same commit in `Cargo.toml` and
 `ENGINE_REV`; they are not copied into this repository.
 
-The Rust application source and SDK implementation are unchanged. Extraction
+The initial extraction kept the Rust application source and SDK implementation unchanged. Extraction
 changes the workspace membership, engine dependency locations and documentation
 links. Native packaging now resolves engine/dictionary notices from the pinned
 Git dependency instead of assuming a sibling store crate. Compatibility executable names remain `oojuro`, `oojurod` and
