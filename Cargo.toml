@@ -1,0 +1,27 @@
+[workspace]
+members = ["crates/oojuro", "crates/oojuro-capture", "crates/oojuro-proxy"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/oojuro/journal"
+
+[workspace.dependencies]
+oojuro-core = { git = "https://github.com/oojuro/oojuro.git", rev = "d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3" }
+oojuro-engine = { git = "https://github.com/oojuro/oojuro.git", rev = "d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3" }
+oojuro-nine = { git = "https://github.com/oojuro/oojuro.git", rev = "d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3" }
+oojuro-store = { git = "https://github.com/oojuro/oojuro.git", rev = "d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3" }
+oojuro-trace = { git = "https://github.com/oojuro/oojuro.git", rev = "d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+blake3 = { version = "1", default-features = false, features = ["std", "pure"] }
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
+crc32fast = "1"
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0
