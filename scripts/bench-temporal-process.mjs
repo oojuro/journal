@@ -64,7 +64,7 @@ try{
     evict(root);
     const [ack,elapsed]=call(binary,root,'temporal-append',['--allow-raw-source'],request);
     times.native_append.push(elapsed);assert.equal(ack.outcome.first_id,sequence);cursor=ack.end;extra.push(Buffer.from(frame));
-    const [stored]=call(other,root,'get',['--id',sequence]);assert.equal(stored.output.event.text,JSON.stringify(payload));
+    const [stored]=call(other,root,'get',['--id',sequence]);assert.equal(stored.output.event.text,payload);
     if(i===0){const [retry]=call(binary,root,'temporal-append',['--allow-raw-source'],request);assert.deepEqual(retry,ack);}
    }
    for(let i=0;i<20;i++){
@@ -79,7 +79,7 @@ try{
     times.position.push(t);assert.equal(position.cursor,cursor);assert.equal(position.sequence,sequence);assert.equal(position.existing,null);
     const id=Math.floor(i*(size-1)/19)+1;
     evict(root);const [stored,getTime]=call(binary,root,'get',['--id',id]);times.get.push(getTime);
-    assert.equal(stored.output.event.text,JSON.stringify(`synthetic Temporal needle${String(id-1).padStart(8,'0')} λ\r\n\0終`));
+    assert.equal(stored.output.event.text,`synthetic Temporal needle${String(id-1).padStart(8,'0')} λ\r\n\0終`);
     evict(root);const [found,searchTime]=call(binary,root,'search',['--query',`needle${String(id-1).padStart(8,'0')}`]);times.search.push(searchTime);
     assert.deepEqual(found.hits.map(hit=>hit.id),[id]);
    }
