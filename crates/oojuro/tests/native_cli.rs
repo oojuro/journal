@@ -264,6 +264,65 @@ fn actual_codex_claude_pi_setup_capture_reopen_search_receipt_export_and_exact_r
 }
 
 #[test]
+fn cached_search_validates_authority_recovers_corruption_and_keeps_bounds_and_time_filters() {
+    for harness in ["codex", "claude-code", "pi"] {
+        let f = Fixture::new(harness);
+        ok(f.setup());
+        fs::write(&f.source, f.initial("battery ORIGINAL-CACHE λ\r\n終")).unwrap();
+        ok(f.capture());
+        let cache = f.parent.join("cache");
+        let cache_path = cache.to_str().unwrap();
+        let cached = |query: &str| {
+            ok(f.call("search", &["--query", query, "--cache", cache_path]))
+        };
+        let fresh = ok(f.call("search", &["--query", "battery"]));
+        let first = cached("battery");
+        assert_eq!(first["cache"], "Rebuilt");
+        assert_eq!(first["hits"], fresh["hits"]);
+        assert_eq!(cached("battery")["cache"], "Loaded");
+        let hit_time = fresh["hits"][0]["reported_time_us"].as_i64().unwrap();
+        let after = (hit_time + 1).to_string();
+        let filtered = ok(f.call("search", &["--query", "battery", "--cache", cache_path, "--from-us", &after]));
+        assert!(filtered["hits"].as_array().unwrap().is_empty());
+        refused(f.call("search", &["--query", "battery", "--cache", cache_path, "--bytes", "2"]), "output_or_input_bound");
+
+        // Both a stale valid prefix and corrupt encrypted cache must consult this log.
+        f.append(&f.message("battery LATER-CACHE"));
+        let ack = ok(f.capture());
+        assert_eq!(ok(f.capture()), ack, "exact capture retry remains unchanged");
+        assert_eq!(cached("battery")["cache"], "Extended");
+        let current = ok(f.call("search", &["--query", "battery"]));
+        assert_eq!(cached("battery")["hits"], current["hits"]);
+        for entry in fs::read_dir(&cache).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|extension| extension == "idx") {
+                let mut bytes = fs::read(&path).unwrap();
+                bytes[0] ^= 1;
+                fs::write(&path, bytes).unwrap();
+            }
+        }
+        let rebuilt = cached("battery");
+        assert_eq!(rebuilt["cache"], "Rebuilt");
+        assert_eq!(rebuilt["hits"], current["hits"]);
+
+        // A fresh key/writer cannot gain authority from a valid foreign cache.
+        let foreign = Fixture::new(harness);
+        ok(foreign.setup());
+        fs::write(&foreign.source, foreign.initial("battery FOREIGN-CACHE")).unwrap();
+        ok(foreign.capture());
+        let result = ok(foreign.call("search", &["--query", "battery", "--cache", cache_path]));
+        assert_eq!(result["cache"], "Rebuilt");
+        assert_eq!(result["hits"], ok(foreign.call("search", &["--query", "battery"]))["hits"]);
+        assert_eq!(cached("battery")["hits"], current["hits"]);
+        let config_path = f.home.join("native.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config["writer"] = json!("foreign-writer");
+        private_write(&config_path, &serde_json::to_vec(&config).unwrap());
+        refused(f.call("search", &["--query", "battery", "--cache", cache_path]), "authority_unavailable");
+    }
+}
+
+#[test]
 fn explicit_raw_capture_and_export_consent_precede_source_or_destination_activity() {
     let f = Fixture::new("claude-code");
     ok(f.setup());

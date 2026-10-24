@@ -6,7 +6,7 @@ mod temporal;
 use config::{Config, Harness};
 use oojuro_capture::{
     ingest::Policy,
-    local::{LocalCapture, Options},
+    local::{Adapter, LocalCapture, LocalRead, Options},
 };
 use oojuro_engine::{
     capture_log::Source,
@@ -196,6 +196,34 @@ fn open(
     };
     result.map_err(|_| Error::Authority)
 }
+fn search_query<'a>(config: &'a Config, args: &'a Arguments) -> Result<Query<'a>> {
+    let query = Query {
+        writer: &config.writer,
+        agent: config.agent,
+        text: args.required("--query")?,
+        from: args.number("--from-us", i64::MIN)?,
+        to: args.number("--to-us", i64::MAX)?,
+        k: args.number("--k", 10)?,
+    };
+    if query.k == 0 || query.k > 1000 || query.from > query.to {
+        return Err(Error::Bounds);
+    }
+    Ok(query)
+}
+fn emit_search(
+    hits: Vec<oojuro_engine::lexical::Hit>,
+    cache: Option<String>,
+    args: &Arguments,
+) -> Result<()> {
+    let hits: Vec<_> = hits
+        .into_iter()
+        .map(|hit| {
+            json!({"id":hit.id,"score_bits":hit.bits,"continued":hit.continued,
+                "reported_time_us":hit.time,"host_id":hit.row})
+        })
+        .collect();
+    emit(&json!({"hits":hits,"cache":cache}), byte_limit(args)?)
+}
 fn view(capture: &LocalCapture, config: &Config, args: &Arguments) -> Result<ReceiptView> {
     let log = capture.authority().map_err(|_| Error::Authority)?;
     let scope = Scope {
@@ -323,6 +351,38 @@ pub fn run() -> Result<i32> {
     if frozen.as_ref().is_some_and(|policy| !policy.enabled()) {
         return Err(Error::Stopped);
     }
+    if args.command == "cache-merge"
+        || args.command == "search" && args.value("--cache").is_some()
+    {
+        let query = if args.command == "search" {
+            Some(search_query(&config, &args)?)
+        } else {
+            None
+        };
+        let mut options = Options::new(&config.writer, config.agent, &policy_id);
+        options.first_id = config.first_id;
+        options.raw_authorization = "native-cli-explicit-source-1".into();
+        let format = match config.harness {
+            Harness::Codex => Adapter::Codex,
+            Harness::ClaudeCode => Adapter::ClaudeCode,
+            Harness::Pi => Adapter::Pi,
+            Harness::Temporal => Adapter::Temporal,
+        };
+        let reader = LocalRead::open(&root.join(config::JOURNAL), &key, options, format)
+            .map_err(|_| Error::Authority)?;
+        let log = reader.authority();
+        let mut index = PersistentIndex::open(log, Path::new(args.required("--cache")?))
+            .map_err(|_| Error::Cache)?;
+        if args.command == "cache-merge" {
+            index.merge(log).map_err(|_| Error::Cache)?;
+            emit(&json!({"status":"merged","segments":index.segment_count()}), 4096)?;
+        } else {
+            let query = query.ok_or(Error::Usage)?;
+            let hits = index.search(log, &query).map_err(|_| Error::Cache)?;
+            emit_search(hits, Some(format!("{:?}", index.opened())), &args)?;
+        }
+        return Ok(0);
+    }
     let policy: Box<dyn Policy> = match frozen {
         Some(policy) => Box::new(policy),
         None => Box::new(policy::ReadOnly),
@@ -352,38 +412,14 @@ pub fn run() -> Result<i32> {
             }
         }
         "search" => {
-            let query = Query {
-                writer: &config.writer,
-                agent: config.agent,
-                text: args.required("--query")?,
-                from: args.number("--from-us", i64::MIN)?,
-                to: args.number("--to-us", i64::MAX)?,
-                k: args.number("--k", 10)?,
-            };
-            if query.k == 0 || query.k > 1000 || query.from > query.to {
-                return Err(Error::Bounds);
-            }
-            let log = capture.authority().map_err(|_| Error::Authority)?;
-            let (hits, cache) = if let Some(cache) = args.value("--cache") {
-                let index =
-                    PersistentIndex::open(log, Path::new(cache)).map_err(|_| Error::Cache)?;
-                (
-                    index.search(log, &query).map_err(|_| Error::Cache)?,
-                    Some(format!("{:?}", index.opened())),
-                )
-            } else {
-                (
-                    capture
-                        .search(query.text, query.from, query.to, query.k)
-                        .map_err(|_| Error::Bounds)?
-                        .into_iter()
-                        .map(|h| h.hit)
-                        .collect(),
-                    None,
-                )
-            };
-            let hits:Vec<_>=hits.into_iter().map(|hit|json!({"id":hit.id,"score_bits":hit.bits,"continued":hit.continued,"reported_time_us":hit.time,"host_id":hit.row})).collect();
-            emit(&json!({"hits":hits,"cache":cache}), byte_limit(&args)?)?;
+            let query = search_query(&config, &args)?;
+            let hits = capture
+                .search(query.text, query.from, query.to, query.k)
+                .map_err(|_| Error::Bounds)?
+                .into_iter()
+                .map(|h| h.hit)
+                .collect();
+            emit_search(hits, None, &args)?;
         }
         "get" | "timeline" | "stats" | "export" => {
             let view = view(&capture, &config, &args)?;
@@ -449,16 +485,6 @@ pub fn run() -> Result<i32> {
                 .unwrap_or(Path::new("."));
             config::sync_dir(parent)?;
             emit(&json!({"status":"raw_restored"}), 4096)?;
-        }
-        "cache-merge" => {
-            let log = capture.authority().map_err(|_| Error::Authority)?;
-            let mut index = PersistentIndex::open(log, Path::new(args.required("--cache")?))
-                .map_err(|_| Error::Cache)?;
-            index.merge(log).map_err(|_| Error::Cache)?;
-            emit(
-                &json!({"status":"merged","segments":index.segment_count()}),
-                4096,
-            )?;
         }
         _ => return Err(Error::Usage),
     }

@@ -24,8 +24,9 @@ mod pi_adapter;
 #[path = "local_temporal.rs"]
 mod temporal_adapter;
 pub use temporal_adapter::{Stream, StreamPosition, StreamReceipt};
+/// Explicit adapter bound into the persisted authority identity.
 #[derive(Clone, Copy)]
-enum Adapter {
+pub enum Adapter {
     Codex,
     ClaudeCode,
     Pi,
@@ -128,6 +129,60 @@ pub struct LocalCapture {
     #[cfg(test)]
     fail_projection: bool,
 }
+
+/// Independently replayed, adapter-validated authority for an external read projection.
+/// The immutable handle cannot append or claim a capture acknowledgement.
+pub struct LocalRead {
+    log: CaptureLog,
+}
+impl LocalRead {
+    pub fn open(dir: &Path, key: &[u8; 32], options: Options, format: Adapter) -> Result<Self> {
+        let log = open_log(dir, key, &options, format)?;
+        validate_contexts(&log, format, &options.writer)?;
+        Ok(Self { log })
+    }
+    /// The caller must independently validate its projection against this exact log.
+    pub fn authority(&self) -> &CaptureLog {
+        &self.log
+    }
+}
+fn open_log(dir: &Path, key: &[u8; 32], options: &Options, format: Adapter) -> Result<CaptureLog> {
+    if options.chunk_bytes == 0
+        || options.chunk_bytes > MAX_BLOCK_BYTES
+        || options.policy_id.is_empty()
+        || options.policy_id.len() > 128
+        || options.raw_authorization.is_empty()
+        || options.raw_authorization.len() > 128
+    {
+        return Err(Error::Invalid("capture options"));
+    }
+    let identity = Identity {
+        writer: options.writer.clone(),
+        agent: options.agent,
+        first_id: options.first_id,
+        adapter: match format {
+            Adapter::Codex => ADAPTER,
+            Adapter::ClaudeCode => CLAUDE_ADAPTER,
+            Adapter::Pi => PI_ADAPTER,
+            Adapter::Temporal => TEMPORAL_ADAPTER,
+        }
+        .into(),
+    };
+    CaptureLog::open(dir, key, identity).map_err(authority)
+}
+fn validate_contexts(log: &CaptureLog, format: Adapter, writer: &str) -> Result<()> {
+    if matches!(format, Adapter::Temporal) {
+        temporal_adapter::validate_log(log, writer)?;
+    }
+    for source in log.sources() {
+        decode_context(log.initial_context(source).map_err(authority)?)?;
+        decode_context(&log.progress(source).map_err(authority)?.context)?;
+    }
+    for batch in log.batches().map_err(authority)? {
+        decode_context(&batch.context)?;
+    }
+    Ok(())
+}
 impl LocalCapture {
     /// Explicit fresh format. Does not discover sources, store keys, or open a legacy journal.
     pub fn open(
@@ -172,28 +227,7 @@ impl LocalCapture {
         policy: Box<dyn Policy>,
         format: Adapter,
     ) -> Result<Self> {
-        if options.chunk_bytes == 0
-            || options.chunk_bytes > MAX_BLOCK_BYTES
-            || options.policy_id.is_empty()
-            || options.policy_id.len() > 128
-            || options.raw_authorization.is_empty()
-            || options.raw_authorization.len() > 128
-        {
-            return Err(Error::Invalid("capture options"));
-        }
-        let identity = Identity {
-            writer: options.writer.clone(),
-            agent: options.agent,
-            first_id: options.first_id,
-            adapter: match format {
-                Adapter::Codex => ADAPTER,
-                Adapter::ClaudeCode => CLAUDE_ADAPTER,
-                Adapter::Pi => PI_ADAPTER,
-                Adapter::Temporal => TEMPORAL_ADAPTER,
-            }
-            .into(),
-        };
-        let log = CaptureLog::open(dir, key, identity).map_err(authority)?;
+        let log = open_log(dir, key, &options, format)?;
         let mut this = Self {
             log,
             options,
@@ -212,16 +246,7 @@ impl LocalCapture {
     pub fn rebuild(&mut self) -> Result<()> {
         self.projection = None;
         self.applied = 0;
-        if matches!(self.format, Adapter::Temporal) {
-            temporal_adapter::validate_log(&self.log, &self.options.writer)?;
-        }
-        for source in self.log.sources() {
-            decode_context(self.log.initial_context(source).map_err(authority)?)?;
-            decode_context(&self.log.progress(source).map_err(authority)?.context)?;
-        }
-        for batch in self.log.batches().map_err(authority)? {
-            decode_context(&batch.context)?;
-        }
+        validate_contexts(&self.log, self.format, &self.options.writer)?;
         let projection = Index::rebuild(&self.log).map_err(|_| Error::Unavailable)?;
         self.applied = self.log.batches().map_err(authority)?.len();
         self.projection = Some(projection);

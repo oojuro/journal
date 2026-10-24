@@ -787,6 +787,13 @@ fn versioned_context_requires_complete_call_policy_state_in_every_sealed_receipt
                 Box::new(Mode::Allow),
             );
             assert!(matches!(reopened, Err(Error::Corrupt)), "field={field}");
+            let read = LocalRead::open(
+                &f.root.join("authority"),
+                &KEY,
+                f.options(),
+                Adapter::Codex,
+            );
+            assert!(matches!(read, Err(Error::Corrupt)), "read field={field}");
         }
     }
     let f = Fixture::new();

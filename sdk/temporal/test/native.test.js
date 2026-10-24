@@ -40,6 +40,11 @@ test("actual SDK to encrypted native authority: stable retry, reopen, read/searc
   await r.record(event("second","SEARCHMARKER"));
   const record=f.call("get",["--id","1"]);assert.match(record.output.event.text,/ORIGINALMARKER/);assert.doesNotMatch(record.output.event.text,/MUTATEDAFTERPREPARE/);
   assert.equal(f.call("search",["--query","SEARCHMARKER"]).hits.length,1);
+  const cache=join(f.parent,"lexical-cache"),plain=f.call("search",["--query","SEARCHMARKER"]);
+  const built=f.call("search",["--query","SEARCHMARKER","--cache",cache]);
+  assert.equal(built.cache,"Rebuilt");assert.deepEqual(built.hits,plain.hits);
+  const loaded=f.call("search",["--query","SEARCHMARKER","--cache",cache]);
+  assert.equal(loaded.cache,"Loaded");assert.deepEqual(loaded.hits,plain.hits);
   const raw=f.raw(await source());const frames=raw.trimEnd().split("\n").map(JSON.parse);
   assert.equal(frames.length,2);assert.equal(frames[0].id,"original");assert.equal(frames[1].sequence,2);
   assert.deepEqual(frames[0].payload,{message:"ORIGINALMARKER",nested:[1,true,null]});
