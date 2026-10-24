@@ -10,7 +10,9 @@ pinned in `Cargo.toml` and `ENGINE_REV`; the [current adoption report](docs/ENGI
 qualifies those dependencies through local CLI capture/read/search. A separate
 [cached capture search report](docs/LOCAL_CAPTURE_CACHE_OPTIMIZATION.md) measures
 removal of duplicated projection work; the [receipt-read report](docs/LOCAL_RECEIPT_READ_OPTIMIZATION.md)
-measures ordinary reads without an unused search index. Existing engine branches and installed
+measures ordinary reads without an unused search index. The
+[Temporal append report](docs/TEMPORAL_SINGLE_OPEN.md) measures retaining its healthy
+capture handle across policy admission. Existing engine branches and installed
 releases remain available during the repository transition.
 
 ## Repository boundaries
