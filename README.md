@@ -6,8 +6,9 @@ agent/session conventions, the recorder, journal CLI/MCP tools and client SDKs.
 
 **Status: source preview.** Extracted from the existing public source at an
 immutable revision; see [provenance](PROVENANCE.md). Engine dependencies are
-pinned in `Cargo.toml` and `ENGINE_REV`; the [current adoption report](docs/ENGINE_LOOKUP_ADOPTION.md)
-qualifies those dependencies through local CLI capture/read/search. A separate
+pinned in `Cargo.toml` and `ENGINE_REV`; the [current adoption report](docs/ENGINE_PROJECTION_PIN_ADOPTION.md)
+records their source qualification. [Earlier local CLI measurements](docs/ENGINE_LOOKUP_ADOPTION.md)
+retain their original source scope. A separate
 [cached capture search report](docs/LOCAL_CAPTURE_CACHE_OPTIMIZATION.md) measures
 removal of duplicated projection work; the [receipt-read report](docs/LOCAL_RECEIPT_READ_OPTIMIZATION.md)
 measures ordinary reads without an unused search index. The

@@ -24,15 +24,20 @@ artifacts; a source import is not a binary redistribution review.
 ## Engine dependency adoption
 
 The current immutable engine dependency is
-`128b76f8a462817910ed5ca622adf156ed1efcc6`, the generic engine's main after
-engine-only extraction and checked exact-ID/ranked-original lookup changes.
+`ee9b89177a0a0695232b179b639d9db857b2eabc`, the generic engine's main after
+engine-only extraction, checked exact-ID/ranked-original lookup changes and
+the qualified cached-projection query-key optimization in engine PR #99.
 All five declared engine libraries and the transitive rank library resolve to
 this one Git source. Their public signatures, storage formats, authority checks
 and dependency versions are unchanged from the extraction pin. The Journal
-application and SDK implementations are unchanged by this adoption.
+application and SDK implementations are unchanged by this dependency adoption.
+The cached projection helper changed by engine PR #99 has no Journal call site;
+adopting it does not establish a Journal performance improvement.
 
-Actual local CLI measurements and their limits are documented in
-[the adoption report](docs/ENGINE_LOOKUP_ADOPTION.md). A managed Cloud consumer
+Current source qualification is documented in
+[the dependency adoption report](docs/ENGINE_PROJECTION_PIN_ADOPTION.md).
+[Earlier local CLI measurements](docs/ENGINE_LOOKUP_ADOPTION.md) retain their
+original `128b76f` engine and Journal source scope. A managed Cloud consumer
 must advance its direct engine dependencies and its Journal dependency together
 to preserve Rust type identity; this Journal change does not update or deploy
 the hosted service.

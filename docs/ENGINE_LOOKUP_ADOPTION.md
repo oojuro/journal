@@ -1,5 +1,11 @@
 # Engine lookup adoption through Journal's local commands
 
+This historical report qualifies the initial `128b76f` dependency adoption and
+retains its original source, checks and measurements. The current immutable
+pin and its local checks are recorded in the
+[current adoption report](ENGINE_PROJECTION_PIN_ADOPTION.md). Later Journal
+optimizations have their own reports linked below.
+
 Journal adopts immutable engine main
 `128b76f8a462817910ed5ca622adf156ed1efcc6` from extraction pin
 `d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3`. All five declared engine libraries,
