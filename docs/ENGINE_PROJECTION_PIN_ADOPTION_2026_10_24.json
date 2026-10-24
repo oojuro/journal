@@ -1,0 +1,224 @@
+{
+  "journal_runtime": "14467a013bf5c9623b4b8cd3ecf053bd723db80c",
+  "engine_revision": "ee9b89177a0a0695232b179b639d9db857b2eabc",
+  "native_binary_sha256": "bd5931944026e17b5a9e8a4a075dffde1a7717b8e8eecaf3375130f770ba45e0",
+  "native_binary_profile": "debug; correctness only, no new timing claims",
+  "phases": [
+    {
+      "name": "rust-full",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "--lib",
+        "--tests",
+        "-p",
+        "oojuro-capture",
+        "-p",
+        "oojuro-proxy",
+        "-p",
+        "oojuro",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 158.365,
+      "log_sha256": "54be672f8c0592242d054a58ca54d56e253751c8d6ca966101a69ba45b295497"
+    },
+    {
+      "name": "native-bins",
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "-p",
+        "oojuro",
+        "--bins"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.116,
+      "log_sha256": "da617cec9cb409cc7d90040e129ad90b46ac0d3bfc0d87a5184fe72f43403805"
+    },
+    {
+      "name": "setup-agent",
+      "command": [
+        "python3",
+        "scripts/test-connect-agent.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.617,
+      "log_sha256": "c869ee68d4efe76b5bc648029eff430e314131d07f6cceaf4e8d6c0de54b53aa"
+    },
+    {
+      "name": "setup-project",
+      "command": [
+        "python3",
+        "scripts/test-connect-project.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.766,
+      "log_sha256": "c4e2bdeb55cde8f2a5043dec705e75be9ea90577eaf9b32f2530d27c57c75d2a"
+    },
+    {
+      "name": "setup-combined",
+      "command": [
+        "python3",
+        "scripts/test-setup-agent.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.419,
+      "log_sha256": "a11ff69bc9d2547d31d4c786370b92bc671b38b64cc596a5cad759a4b9afbd16"
+    },
+    {
+      "name": "native-packaging",
+      "command": [
+        "python3",
+        "scripts/test_package_native.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.265,
+      "log_sha256": "a8d6da29ee1a57b555cc71d3c8fa62f4d3f41de39b5b34fe9dc61aa64109e757"
+    },
+    {
+      "name": "typescript-sdk",
+      "command": [
+        "node",
+        "--test",
+        "sdk/typescript/test/attachments.test.js",
+        "sdk/typescript/test/capture.test.js",
+        "sdk/typescript/test/client.test.js",
+        "sdk/typescript/test/file-deletion.test.js",
+        "sdk/typescript/test/files.test.js",
+        "sdk/typescript/test/journal-framed.test.js",
+        "sdk/typescript/test/journal.test.js",
+        "sdk/typescript/test/project.test.js",
+        "sdk/typescript/test/session-capture.test.js"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 6.43,
+      "log_sha256": "63ae4b795a10b4604f7b179a7b1a13123bbdecfc2df3e00ea8c9e95e5bc699c7"
+    },
+    {
+      "name": "temporal-sdk",
+      "command": [
+        "node",
+        "--test",
+        "sdk/temporal/test/codec.test.js",
+        "sdk/temporal/test/native.test.js",
+        "sdk/temporal/test/recall.test.js"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 16.394,
+      "log_sha256": "f27f3f1ac2b34597236e4856c886654458453bc6dcb6eb75317fd6510f1a3f73"
+    },
+    {
+      "name": "sdk-offline-package",
+      "command": [
+        "python3",
+        "scripts/test-sdk-package.py"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.515,
+      "log_sha256": "04f80d2e597f6f48dc9d39ac86c0b38db4ea759bdc7d990b2bb3e75fb73f44a6"
+    }
+  ],
+  "kind": "local synthetic source-adoption correctness qualification; no performance measurements",
+  "base_journal": "1b0f286530131a55df14cf2a17869c512bd02c0f",
+  "source_identity": {
+    "base_journal": "1b0f286530131a55df14cf2a17869c512bd02c0f",
+    "engine_revision": "ee9b89177a0a0695232b179b639d9db857b2eabc",
+    "libraries": {
+      "oojuro-core": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      },
+      "oojuro-engine": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      },
+      "oojuro-nine": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      },
+      "oojuro-rank": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      },
+      "oojuro-store": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      },
+      "oojuro-trace": {
+        "version": "0.1.0",
+        "source": "git+https://github.com/oojuro/oojuro.git?rev=ee9b89177a0a0695232b179b639d9db857b2eabc#ee9b89177a0a0695232b179b639d9db857b2eabc"
+      }
+    },
+    "one_engine_source": true,
+    "registry_versions_and_all_other_lock_fields_unchanged": true,
+    "only_exact_pin_replacements_in_manifest_lock_and_engine_rev": true
+  },
+  "checks": {
+    "rust": {
+      "passed": 216,
+      "failed": 0,
+      "ignored": 1,
+      "targets": 23,
+      "ignored_name": "proxy overhead (pre-existing)"
+    },
+    "native_cli_in_rust": 9,
+    "record_cli_in_rust": 8,
+    "native_record_context_in_rust": 1,
+    "native_binaries": [
+      "oojuro",
+      "oojurod",
+      "oojuro-native"
+    ],
+    "setup_tests": {
+      "agent": 2,
+      "project": 3,
+      "combined": 3
+    },
+    "native_packaging": 6,
+    "typescript_sdk": 114,
+    "temporal_sdk": 25,
+    "temporal_actual_native_subset": 11,
+    "sdk_offline_package_install_exports": true,
+    "journal_app_sdk_and_scripts_unchanged": true,
+    "registry_versions_and_other_lock_fields_unchanged": true,
+    "git_engine_package_records": 6,
+    "distinct_engine_sources": 1,
+    "journal_record_projection_call_sites": 0,
+    "unchanged_benchmarks_rerun": false
+  },
+  "environment": {
+    "rustc": "1.99.0 (b940084d7 2026-09-28)",
+    "cargo": "1.99.0",
+    "node": "24.22.1",
+    "target": "x86_64-unknown-linux-gnu",
+    "rustflags": "-C target-cpu=x86-64",
+    "cflags": "-march=x86-64 -mtune=generic",
+    "heavy_gates": "cooperating exclusive benchmark lock; fresh dedicated Cargo target",
+    "fixtures": "synthetic private local roots; local SDK peer; loopback test services only",
+    "remote_ci": "not run; GitHub Actions disabled"
+  },
+  "metadata": {
+    "command": "cargo metadata --locked --offline --format-version 1",
+    "exact_package_count": 6,
+    "one_source": true
+  },
+  "file_hashes": {
+    "Cargo.toml": "30e6b8638a4cdea02ce8ae2b23f9cd9902188aa096907d44026ac57c031ef48b",
+    "Cargo.lock": "1e9883e96cc5b4ac1c2bfd5896418081efdcf2194a76dbb0581c199d81bfc18d",
+    "ENGINE_REV": "bc84167b6670234bf0d2a0f83f25d44456ea0858383be584af9e261864fe4acb"
+  },
+  "limits": [
+    "No Journal speedup claim: Journal does not call the changed public projection helper.",
+    "Earlier benchmark receipts retain original source revisions; no new timing campaign was run.",
+    "No AWS/provider operation, enrollment, release, deployment, Cloud adoption or main merge.",
+    "Full authority replay and existing 100k/128 MiB limits remain; no 1M/ten-client/SLO acceptance."
+  ]
+}
