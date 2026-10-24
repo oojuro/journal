@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import io
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("package_native", Path(__file__).with_name("package_native.py"))
 package = importlib.util.module_from_spec(spec)
@@ -15,6 +16,56 @@ spec.loader.exec_module(package)
 
 
 class Distribution(unittest.TestCase):
+    def test_git_engine_notices_and_dictionary_are_resolved_from_the_dependency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, engine, rust, binaries = [root / name for name in ["source", "engine", "rust", "bin"]]
+            files = {
+                source / "LICENSE": "synthetic project license",
+                source / "NOTICE": "synthetic project notice",
+                source / "Cargo.lock": "version = 4\npackage = []\n",
+                source / "licenses/MIT.txt": "synthetic supplement",
+                engine / "LICENSE": "synthetic engine license",
+                engine / "NOTICE": "synthetic engine notice",
+                engine / "licenses/MIT.txt": "synthetic engine supplement",
+                engine / "crates/oojuro-store/dict/README.md": "synthetic dictionary provenance",
+                engine / "crates/oojuro-store/dict/starter-v1.zdict": "synthetic dictionary bytes",
+                rust / "share/doc/rust/COPYRIGHT-library.html": "synthetic Rust attribution",
+                rust / "share/doc/rust/licenses/MIT.txt": "synthetic Rust license",
+                binaries / "oojuro": "synthetic binary with synthetic dictionary bytes",
+                binaries / "oojurod": "synthetic recorder with synthetic dictionary bytes",
+            }
+            for path, text in files.items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text)
+            revision = "a" * 40
+            dependency = {"name": "oojuro-store", "version": "0.1.0", "license": "Apache-2.0",
+                          "source": "git+https://github.com/oojuro/oojuro.git?rev=" + revision + "#" + revision,
+                          "manifest_path": str(engine / "crates/oojuro-store/Cargo.toml")}
+
+            def run(*args):
+                if args[:2] == ("cargo", "metadata"):
+                    return json.dumps({"packages": [dependency]})
+                if args[:2] == ("cargo", "tree"):
+                    return "oojuro-store v0.1.0"
+                if args[:2] == ("rustc", "--print"):
+                    return str(rust)
+                if args[:2] == ("git", "status"):
+                    return ""
+                return "synthetic toolchain or source revision"
+
+            out = root / "package"
+            with mock.patch.object(package, "ROOT", source), mock.patch.object(package, "run", run):
+                package.package(binaries, out, "x86_64-unknown-linux-gnu")
+                self.assertEqual((out / "licenses/dictionary-provenance.md").read_text(),
+                                 "synthetic dictionary provenance")
+                self.assertTrue((out / "licenses" / ("oojuro-engine-" + revision) / "NOTICE").is_file())
+                manifest = json.loads((out / "manifest.json").read_text())
+                self.assertTrue(all(value["dictionaryIncluded"] for value in manifest["binaries"].values()))
+                dependency["source"] = "git+https://example.invalid/unreviewed#" + revision
+                with self.assertRaisesRegex(ValueError, "unreviewed git dependency"):
+                    package.package(binaries, root / "unreviewed", "x86_64-unknown-linux-gnu")
+
     def test_empty_archive_notices_are_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             archive = Path(directory) / "example-1.crate"
