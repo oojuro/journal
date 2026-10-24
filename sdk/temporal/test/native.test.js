@@ -88,6 +88,17 @@ test("denied operation result remains withheld after policy relaxation and resta
   assert.match(f.raw(await source()),/WITHHELDRESULT/);
  }finally{f.close();}
 });
+test("exact receipt precedes stopped policy while new and changed intents cannot advance",async()=>{
+ const f=new Fixture();try {
+  const r=f.recorder(),prepared=await r.prepare(event("before-stop","ORIGINAL-BEFORE-STOP"));
+  const first=await prepared.send(),original=f.raw(await source());
+  writeFileSync(join(f.root,"policy.json"),JSON.stringify({...policy(),paused:true}),{mode:0o600});
+  assert.deepEqual(await prepared.send(),first);
+  await assert.rejects(r.record(event("new-after-stop","REFUSED-NEW")),e=>e instanceof TemporalCaptureError&&e.outcome==="unknown");
+  await assert.rejects(r.record(event("before-stop","CHANGED-ORIGINAL")),e=>e instanceof TemporalCaptureError&&e.outcome==="unknown");
+  assert.equal(f.call("stats").stored,1);assert.equal(f.raw(await source()),original);
+ }finally{f.close();}
+});
 test("bounded diagnostic queue exposes drops and settles before reuse",async()=>{
  const f=new Fixture();try {
   const diagnostics=[];const r=f.recorder({maxPending:1,onDiagnostic:code=>diagnostics.push(code)});

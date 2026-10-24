@@ -676,30 +676,16 @@ fn incomplete_raw_line_cannot_be_reinterpreted_by_relaxing_its_policy_identity()
     .unwrap();
     let before = c.capture_file(SOURCE, &f.file, |_| true).unwrap().unwrap();
     assert!(before.raw_end > before.parsed_end);
-    drop(c);
     f.append(b"\n");
     let mut relaxed = f.options();
     relaxed.policy_id = "relaxed-snapshot-v2".into();
-    let mut c = LocalCapture::open(
-        &f.root.join("authority"),
-        &KEY,
-        relaxed.clone(),
-        Box::new(Mode::Allow),
-    )
-    .unwrap();
+    let mut c = c.with_policy(Box::new(Mode::Allow), &relaxed.policy_id).unwrap();
     assert!(matches!(
         c.capture_file(SOURCE, &f.file, |_| true),
         Err(Error::Invalid(_))
     ));
     assert_eq!(c.report(SOURCE).unwrap(), before);
-    drop(c);
-    let mut c = LocalCapture::open(
-        &f.root.join("authority"),
-        &KEY,
-        original,
-        Box::new(Mode::Strict),
-    )
-    .unwrap();
+    let mut c = c.with_policy(Box::new(Mode::Strict), &original.policy_id).unwrap();
     let done = c.capture_file(SOURCE, &f.file, |_| true).unwrap().unwrap();
     assert!(done.event_ids.is_empty());
     assert_eq!(done.raw_end, done.parsed_end);
