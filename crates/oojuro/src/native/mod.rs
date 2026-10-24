@@ -9,7 +9,7 @@ use oojuro_capture::{
     local::{Adapter, LocalCapture, LocalRead, Options},
 };
 use oojuro_engine::{
-    capture_log::Source,
+    capture_log::{CaptureLog, Source},
     lexical::{Query, segments::PersistentIndex},
     receipts::{Limits, MAX_OUTPUT_BYTES, Range, ReceiptView, Scope},
 };
@@ -224,8 +224,7 @@ fn emit_search(
         .collect();
     emit(&json!({"hits":hits,"cache":cache}), byte_limit(args)?)
 }
-fn view(capture: &LocalCapture, config: &Config, args: &Arguments) -> Result<ReceiptView> {
-    let log = capture.authority().map_err(|_| Error::Authority)?;
+fn view(log: &CaptureLog, config: &Config, args: &Arguments) -> Result<ReceiptView> {
     let scope = Scope {
         writer: &config.writer,
         agent: config.agent,
@@ -239,6 +238,50 @@ fn view(capture: &LocalCapture, config: &Config, args: &Arguments) -> Result<Rec
         None => ReceiptView::open(log, scope, range),
     }
     .map_err(|_| Error::Receipt)
+}
+fn read_receipts(log: &CaptureLog, config: &Config, args: &Arguments) -> Result<()> {
+    let view = view(log, config, args)?;
+    let bytes = byte_limit(args)?;
+    match args.command.as_str() {
+        "get" => emit(
+            &view
+                .get(
+                    log,
+                    args.required("--id")?.parse().map_err(|_| Error::Usage)?,
+                    bytes - 1,
+                )
+                .map_err(|_| Error::Receipt)?,
+            bytes,
+        )?,
+        "stats" => emit(
+            &view.stats(log, bytes - 1).map_err(|_| Error::Receipt)?,
+            bytes,
+        )?,
+        "export" => emit_bytes(
+            view.export(
+                log,
+                Limits {
+                    entries: args.number("--entries", 100)?,
+                    bytes: bytes - 1,
+                },
+            )
+            .map_err(|_| Error::Receipt)?,
+            bytes,
+        )?,
+        _ => emit(
+            &view
+                .page(
+                    log,
+                    Limits {
+                        entries: args.number("--entries", 100)?,
+                        bytes: bytes - 1,
+                    },
+                )
+                .map_err(|_| Error::Receipt)?,
+            bytes,
+        )?,
+    }
+    Ok(())
 }
 fn byte_limit(args: &Arguments) -> Result<usize> {
     let bytes = args.number("--bytes", 1 << 20)?;
@@ -351,7 +394,8 @@ pub fn run() -> Result<i32> {
     if frozen.as_ref().is_some_and(|policy| !policy.enabled()) {
         return Err(Error::Stopped);
     }
-    if args.command == "cache-merge"
+    let receipts = matches!(args.command.as_str(), "get" | "timeline" | "stats" | "export");
+    if receipts || args.command == "cache-merge"
         || args.command == "search" && args.value("--cache").is_some()
     {
         let query = if args.command == "search" {
@@ -371,6 +415,10 @@ pub fn run() -> Result<i32> {
         let reader = LocalRead::open(&root.join(config::JOURNAL), &key, options, format)
             .map_err(|_| Error::Authority)?;
         let log = reader.authority();
+        if receipts {
+            read_receipts(log, &config, &args)?;
+            return Ok(0);
+        }
         let mut index = PersistentIndex::open(log, Path::new(args.required("--cache")?))
             .map_err(|_| Error::Cache)?;
         if args.command == "cache-merge" {
@@ -420,50 +468,6 @@ pub fn run() -> Result<i32> {
                 .map(|h| h.hit)
                 .collect();
             emit_search(hits, None, &args)?;
-        }
-        "get" | "timeline" | "stats" | "export" => {
-            let view = view(&capture, &config, &args)?;
-            let log = capture.authority().map_err(|_| Error::Authority)?;
-            let bytes = byte_limit(&args)?;
-            match args.command.as_str() {
-                "get" => emit(
-                    &view
-                        .get(
-                            log,
-                            args.required("--id")?.parse().map_err(|_| Error::Usage)?,
-                            bytes - 1,
-                        )
-                        .map_err(|_| Error::Receipt)?,
-                    bytes,
-                )?,
-                "stats" => emit(
-                    &view.stats(log, bytes - 1).map_err(|_| Error::Receipt)?,
-                    bytes,
-                )?,
-                "export" => emit_bytes(
-                    view.export(
-                        log,
-                        Limits {
-                            entries: args.number("--entries", 100)?,
-                            bytes: bytes - 1,
-                        },
-                    )
-                    .map_err(|_| Error::Receipt)?,
-                    bytes,
-                )?,
-                _ => emit(
-                    &view
-                        .page(
-                            log,
-                            Limits {
-                                entries: args.number("--entries", 100)?,
-                                bytes: bytes - 1,
-                            },
-                        )
-                        .map_err(|_| Error::Receipt)?,
-                    bytes,
-                )?,
-            }
         }
         "restore-raw" => {
             let generation = source(args.required("--source-id")?)?;

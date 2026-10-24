@@ -45,6 +45,11 @@ test("actual SDK to encrypted native authority: stable retry, reopen, read/searc
   assert.equal(built.cache,"Rebuilt");assert.deepEqual(built.hits,plain.hits);
   const loaded=f.call("search",["--query","SEARCHMARKER","--cache",cache]);
   assert.equal(loaded.cache,"Loaded");assert.deepEqual(loaded.hits,plain.hits);
+  const timeline=f.call("timeline",["--entries","100"]),exported=f.call("export",["--entries","100"]);
+  assert.deepEqual(timeline.entries,exported.entries);
+  assert.deepEqual(timeline.entries.map(entry=>entry.output.event.id),[1,2]);
+  assert.equal(timeline.entries[0].output.event.text,record.output.event.text);
+  assert.equal(f.call("stats").stored,2);
   const raw=f.raw(await source());const frames=raw.trimEnd().split("\n").map(JSON.parse);
   assert.equal(frames.length,2);assert.equal(frames[0].id,"original");assert.equal(frames[1].sequence,2);
   assert.deepEqual(frames[0].payload,{message:"ORIGINALMARKER",nested:[1,true,null]});

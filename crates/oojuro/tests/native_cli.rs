@@ -323,6 +323,50 @@ fn cached_search_validates_authority_recovers_corruption_and_keeps_bounds_and_ti
 }
 
 #[test]
+fn ordinary_receipt_reads_preserve_originals_prefix_scope_and_bounds() {
+    for harness in ["codex", "claude-code", "pi"] {
+        let f = Fixture::new(harness);
+        ok(f.setup());
+        let original = "ORIGINAL-READ λ\r\nline\0終";
+        fs::write(&f.source, f.initial(original)).unwrap();
+        ok(f.capture());
+        let first = ok(f.call("get", &["--id", "1"]));
+        assert_eq!(first["output"]["event"]["text"], original);
+        let page = ok(f.call("timeline", &["--entries", "1"]));
+        let cursor = page["next"].as_str().unwrap();
+        let watermark = page["watermark"].clone();
+        f.append(&f.message("LATER-READ"));
+        ok(f.capture());
+        let continued = ok(f.call("export", &["--entries", "100", "--cursor", cursor]));
+        assert_eq!(continued["watermark"], watermark);
+        assert!(!serde_json::to_string(&continued).unwrap().contains("LATER-READ"));
+        let stats = ok(f.call("stats", &[]));
+        assert_eq!(stats["stored"], 2);
+        assert_eq!(stats["malformed"], 1);
+        let exported = ok(f.call("export", &["--entries", "100"]));
+        let texts: Vec<_> = exported["entries"].as_array().unwrap().iter()
+            .filter_map(|entry| entry["output"]["event"]["text"].as_str()).collect();
+        assert!(texts.contains(&original));
+        assert!(texts.contains(&"LATER-READ"));
+        for command in ["get", "timeline", "stats", "export"] {
+            let mut args = vec!["--bytes", "2"];
+            if command == "get" { args.extend(["--id", "1"]); }
+            refused(f.call(command, &args), "receipt_refused");
+        }
+        refused(f.call("timeline", &["--entries", "0"]), "receipt_refused");
+        refused(f.call("export", &["--cursor", cursor, "--start", "1"]), "receipt_refused");
+        let path = f.home.join("native.json");
+        let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        config["writer"] = json!("foreign-writer");
+        private_write(&path, &serde_json::to_vec(&config).unwrap());
+        for command in ["get", "timeline", "stats", "export"] {
+            let args = if command == "get" { vec!["--id", "1"] } else { vec![] };
+            refused(f.call(command, &args), "authority_unavailable");
+        }
+    }
+}
+
+#[test]
 fn explicit_raw_capture_and_export_consent_precede_source_or_destination_activity() {
     let f = Fixture::new("claude-code");
     ok(f.setup());

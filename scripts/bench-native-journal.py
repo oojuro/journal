@@ -144,7 +144,8 @@ def main():
                 timings = {key: [] for key in ["record_append_one", "record_get",
                                                "record_search", "capture_append_one",
                                                "capture_get", "capture_search",
-                                               "capture_search_cached"]}
+                                               "capture_search_cached", "capture_timeline",
+                                               "capture_stats", "capture_export"]}
                 for sample in range(args.samples):
                     index = size + sample
                     private(input_path, encoded([row(index)]))
@@ -204,6 +205,19 @@ def main():
                     stored, elapsed = call(name, captured, "get", "--id", index + 1)
                     timings["capture_get"].append(elapsed)
                     assert stored["output"]["event"]["text"] == text(index)
+                    for command in ["timeline", "stats", "export"]:
+                        # Initial empty session_meta occupies ordinal zero, before event 1.
+                        options = ["--start", index + 1, "--end", index + 2]
+                        if command != "stats":
+                            options.extend(["--entries", 1])
+                        page, elapsed = call(name, captured, command, *options)
+                        timings["capture_" + command].append(elapsed)
+                        if command == "stats":
+                            assert page["receipts"] == page["stored"] == page["indexed"] == 1
+                        else:
+                            assert len(page["entries"]) == 1 and page["next"] is None
+                            event = page["entries"][0]["output"]["event"]
+                            assert event["id"] == index + 1 and event["text"] == text(index)
                     found, elapsed = call(name, captured, "search", "--query", token(index))
                     timings["capture_search"].append(elapsed)
                     assert [hit["id"] for hit in found["hits"]] == [index + 1]
