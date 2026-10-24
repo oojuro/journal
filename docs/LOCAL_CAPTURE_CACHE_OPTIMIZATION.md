@@ -1,5 +1,9 @@
 # Local capture cache: remove a duplicate projection
 
+This report records the cache change's exact runtime snapshot. A subsequent
+[receipt-read change](LOCAL_RECEIPT_READ_OPTIMIZATION.md) also removes the unused
+projection from get/timeline/stats/export; capture and uncached search stay eager.
+
 Cached native transcript searches previously opened `LocalCapture`, which
 replayed authority and eagerly tokenized a complete in-memory index, then opened
 and validated a second persistent index. The loaded-cache path did both jobs.

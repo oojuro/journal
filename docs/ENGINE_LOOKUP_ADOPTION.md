@@ -113,7 +113,9 @@ and Node 24.22.1, not a claim of remotely executed CI or a published release.
 
 This section records the adoption baseline. A subsequent
 [cached capture search change](LOCAL_CAPTURE_CACHE_OPTIMIZATION.md) removes the
-duplicated projection for cached searches; capture and ordinary reads stay eager.
+duplicated projection for cached searches. A separate
+[receipt-read change](LOCAL_RECEIPT_READ_OPTIMIZATION.md) removes the unused
+projection for original receipt reads; capture and uncached search stay eager.
 
 1. `native/records.rs` opens/replays Record authority for every command, then
    rebuilds the full lexical index for each `record-search`/`record-context`.
