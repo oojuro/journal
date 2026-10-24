@@ -7,7 +7,9 @@ agent/session conventions, the recorder, journal CLI/MCP tools and client SDKs.
 **Status: source preview.** Extracted from the existing public source at an
 immutable revision; see [provenance](PROVENANCE.md). Engine dependencies are
 pinned in `Cargo.toml` and `ENGINE_REV`; the [current adoption report](docs/ENGINE_LOOKUP_ADOPTION.md)
-qualifies those dependencies through local CLI capture/read/search. Existing engine branches and installed
+qualifies those dependencies through local CLI capture/read/search. A separate
+[cached capture search report](docs/LOCAL_CAPTURE_CACHE_OPTIMIZATION.md) measures
+removal of duplicated projection work. Existing engine branches and installed
 releases remain available during the repository transition.
 
 ## Repository boundaries
