@@ -14,7 +14,7 @@ releases remain available during the repository transition.
 | Repository | Responsibility |
 | --- | --- |
 | [oojuro](https://github.com/oojuro/oojuro) | Embedded storage, compression, durability and retrieval; the planned `.ojo` database format |
-| [journal](https://github.com/oojuro/journal) | Agent-specific recording, integrations and history tools |
+| [o-journal](https://github.com/oojuro/o-journal) | Agent-specific recording, integrations and history tools |
 | [o-cloud](https://github.com/oojuro/o-cloud) | Managed hosting, sharing, accounts, billing and the `oojuro.com` website |
 | [o-release-operator](https://github.com/oojuro/o-release-operator) | Trusted Oojuro release coordination |
 
