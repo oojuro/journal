@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "base_main": "a99343c801f99c4977c0f3314febdb9a00474b87",
+  "engine_commit": "a49fd108f5acc0b8658a84631c103d3e2e6f7be0",
+  "registry_versions_unchanged": true,
+  "synthetic_only": true,
+  "checks": [
+    {"command": "python3 scripts/test-journal-durability.py --binary /qualified/old/ojo-journal", "result": "expected RED at reopened unconfirmed application ACK"},
+    {"command": "python3 scripts/test-journal-durability.py --binary /qualified/new/ojo-journal", "result": "GREEN raw and encrypted", "real_linux_fsync_eio": true, "confirmed_retry_stored": 0, "original_bytes_unchanged": true},
+    {"command": "cargo test --locked --no-default-features -p oojuro --lib ojo_ -- --test-threads=1", "passed": 8},
+    {"command": "cargo test --locked --no-default-features -p oojuro --test ojo_journal_cli -- --test-threads=1", "passed": 6},
+    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0}
+  ],
+  "scope": "Current KV session files and healthy owner; explicit Event migration and canonical filename follow separately. No publication or performance claim."
+}

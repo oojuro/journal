@@ -835,7 +835,7 @@ dependencies = [
 [[package]]
 name = "ojo"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "chacha20poly1305",
  "crc32fast",
@@ -893,7 +893,7 @@ dependencies = [
 [[package]]
 name = "oojuro-core"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "blake3",
  "crc32fast",
@@ -905,7 +905,7 @@ dependencies = [
 [[package]]
 name = "oojuro-engine"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "aho-corasick",
  "blake3",
@@ -921,7 +921,7 @@ dependencies = [
 [[package]]
 name = "oojuro-nine"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "blake3",
  "crc32fast",
@@ -959,12 +959,12 @@ dependencies = [
 [[package]]
 name = "oojuro-rank"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 
 [[package]]
 name = "oojuro-store"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "blake3",
  "chacha20poly1305",
@@ -977,7 +977,7 @@ dependencies = [
 [[package]]
 name = "oojuro-trace"
 version = "0.1.0"
-source = "git+https://github.com/oojuro/oojuro.git?rev=915b2db9b94a6dde294ecec27fc0e5de6ba16f08#915b2db9b94a6dde294ecec27fc0e5de6ba16f08"
+source = "git+https://github.com/oojuro/oojuro.git?rev=a49fd108f5acc0b8658a84631c103d3e2e6f7be0#a49fd108f5acc0b8658a84631c103d3e2e6f7be0"
 dependencies = [
  "aho-corasick",
  "blake3",

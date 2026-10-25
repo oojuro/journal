@@ -346,7 +346,16 @@ impl JournalRoot {
         {
             return Err("private_journal_file_required");
         }
-        Database::open(path, self.key.as_ref(), writable).map_err(error)
+        let mut db = Database::open(&path, self.key.as_ref(), writable).map_err(error)?;
+        // Replay validates bytes, while a prior writer may have lost its sync
+        // acknowledgement. Confirm before reconstructed application ACKs or sync staging.
+        if writable {
+            db.confirm().map_err(error)?;
+            File::open(path.parent().ok_or("invalid_journal_path")?)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|_| "journal_publication_outcome_unknown")?;
+        }
+        Ok(db)
     }
     pub fn ensure_session(
         &self,
@@ -707,6 +716,7 @@ fn append_to(db: &mut Database, run: &str, batch_request: &str, records: &[Recor
         if previous.as_slice() != fingerprint {
             return Err("journal_request_conflict");
         }
+        db.confirm().map_err(error)?;
         return Ok(0);
     }
     let mut changes: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
