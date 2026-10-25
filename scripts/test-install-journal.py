@@ -75,6 +75,31 @@ shutil.copyfile(pathlib.Path(os.environ['JOURNAL_INSTALL_FIXTURE'])/pathlib.Pure
             output=subprocess.run(["sh",str(INSTALLER)],env=env,capture_output=True,text=True)
             self.assertNotEqual(output.returncode,0)
             self.assertEqual(original.read_text(),"preserve me")
+    def test_incomplete_payload_never_changes_existing_binaries(self):
+        for missing in ["bin/oojurod", "Cargo.lock", "manifest.json", "licenses", "empty-licenses"]:
+            with self.subTest(missing=missing),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);env=self.fixture(root)
+                archive=Path(env["JOURNAL_INSTALL_FIXTURE"])/ASSET
+                with tarfile.open(archive,"w:gz") as tar:
+                    for path in sorted((root/"package").rglob("*")):
+                        relative=str(path.relative_to(root/"package"))
+                        if relative==missing or relative.startswith(missing+"/") or missing=="empty-licenses" and relative.startswith("licenses/"):continue
+                        tar.add(path,arcname=relative,recursive=False)
+                (archive.parent/"SHA256SUMS").write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+"  "+ASSET+"\n")
+                prefix=Path(env["OJO_JOURNAL_PREFIX"]);(prefix/"bin").mkdir(parents=True)
+                originals={name:("preserve "+name).encode() for name in ["ojo-journal","oojuro","oojuro-native","oojurod"]}
+                for name,data in originals.items():(prefix/"bin"/name).write_bytes(data)
+                output=subprocess.run(["sh",str(INSTALLER)],env=env,capture_output=True,text=True)
+                self.assertNotEqual(output.returncode,0)
+                for name,data in originals.items():self.assertEqual((prefix/"bin"/name).read_bytes(),data)
+                self.assertFalse((prefix/"share").exists())
+    def test_notice_parent_symlink_is_not_followed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);env=self.fixture(root);prefix=Path(env["OJO_JOURNAL_PREFIX"])
+            (prefix/"share").mkdir(parents=True);other=root/"unrelated-notices";other.mkdir()
+            (prefix/"share/ojo-journal").symlink_to(other,target_is_directory=True)
+            output=subprocess.run(["sh",str(INSTALLER)],env=env,capture_output=True,text=True)
+            self.assertNotEqual(output.returncode,0);self.assertFalse(list(other.iterdir()));self.assertFalse((prefix/"bin").exists())
     def test_insecure_origin_is_refused_before_downloading(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);env=self.fixture(root);env["OJO_JOURNAL_RELEASE_BASE"]="http://synthetic.invalid"

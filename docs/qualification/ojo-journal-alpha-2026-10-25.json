@@ -91,6 +91,18 @@
         "original lifecycle and bytes preserved",
         "retry remains bound after archive"
       ]
+    },
+    {
+      "change": "Validate all four binaries and complete notice metadata before prefix mutation; stage all files and publish full notices before executable replacements.",
+      "command": "python3 scripts/test-install-journal.py",
+      "passed": 6,
+      "cases": [
+        "missing late binary leaves every installed binary unchanged",
+        "missing Cargo.lock and manifest leave every installed binary unchanged",
+        "missing or empty dependency notices leave every installed binary unchanged",
+        "notice parent symlink is not followed",
+        "normal verified archive retains all binaries and notices"
+      ]
     }
   ]
 }
