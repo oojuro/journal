@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "base_main": "51f9828b3715e8638becfb81a34384c72299419b",
+  "engine_commit": "a49fd108f5acc0b8658a84631c103d3e2e6f7be0",
+  "owner_decision": "https://github.com/oojuro/oojuro/issues/110",
+  "synthetic_only": true,
+  "checks": [
+    {"command": "cargo test --locked --no-default-features -p oojuro --lib ojo_ -- --test-threads=1", "passed": 9},
+    {"command": "cargo test --locked --no-default-features -p oojuro --test ojo_journal_cli -- --test-threads=1", "passed": 6},
+    {"command": "python3 scripts/test-journal-durability.py --binary /qualified/ojo-journal", "result": "GREEN raw and encrypted real Linux fsync-EIO cases"},
+    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0}
+  ],
+  "observed": [
+    "New session, archive temporary and migration-recovery filenames use .juro.",
+    "Raw and encrypted legacy .ojo sessions remain readable/writable at their original path with no automatic rename.",
+    "Legacy recovery artifacts resume and restore without replacement or rename.",
+    "Both names for one identity refuse reads, listing, writes, migration and restore before changing data.",
+    "JSONL interchange retains .jsonl; CLI/API names, header magic and wire/profile semantics remain unchanged.",
+    "Existing complete recovery artifact pathname is reconfirmed before conversion after an unknown prior publication."
+  ],
+  "scope": "Filename compatibility only; no implicit Event-profile migration, publication or performance claim. Historical artifacts remain immutable."
+}

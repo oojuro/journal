@@ -1,7 +1,7 @@
-# ojo-journal .ojo alpha
+# ojo-journal .juro alpha
 
 The supported new application is `ojo-journal`, on Linux, backed by the standalone
-experimental `.ojo` file engine. Each provider session has its own file under the
+experimental `.juro` file engine. Each provider session has its own file under the
 private root's `journals/` directory. A separate 0600 local key encrypts originals
 by default. Operational configuration/cursors are private 0600 files. Existing
 compatibility commands and library APIs are preserved.
@@ -108,7 +108,7 @@ Record2 and original Trace journal directories. Stop the legacy recorder first;
 all existing source locks must be acquired. The destination must use encryption.
 
 Migration snapshots every regular source file, including raw/control state and
-old keys, into a separate encrypted `.ojo` recovery artifact before converting
+old keys, into a separate encrypted `.juro` recovery artifact before converting
 records. Legacy recovery/decoding runs only on a private copy. The source files
 are never changed. Converted records preserve accepted original text and retain
 a source/record reference; the recovery artifact preserves all original metadata,
@@ -177,3 +177,13 @@ application event IDs, source session mapping and unknown-ACK retry intents, and
 retain a recovery artifact before switching formats. Existing alpha key/value
 files are not implicitly Event-profile files. Their supported readers and frozen
 wire 0.1 contract continue to apply independently of engine release versions.
+
+## Filename compatibility
+
+New session, archive and migration-recovery files use `.juro`. Existing `.ojo`
+files keep their names and remain readable and writable through explicit legacy
+lookup. Journal never renames a store automatically. If both canonical and legacy
+files exist for one identity, lookup, listing, mutation and restore refuse the
+ambiguity. JSONL exports keep `.jsonl`: they are text interchange, not database
+files. CLI/API names, OJO header magic, wire/profile versions and frozen vectors
+are unchanged. Historical release and qualification artifacts retain their names.

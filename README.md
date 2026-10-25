@@ -1,13 +1,15 @@
 # ojo-journal
 
-Record agent sessions into portable `.ojo` journals, find a past decision and open
+Record agent sessions into portable `.juro` journals, find a past decision and open
 its exact recorded context. Use it locally without an account, with optional
 scoped delivery to [ojo-cloud](https://oojuro.com).
 
 **Experimental alpha source.** The primary `ojo-journal` executable uses the
-standalone `.ojo` engine. Existing `oojuro`, `oojurod` and `oojuro-native` commands
-and directory stores remain compatible. The `.ojo` wire format remains
-experimental; this application does not declare it stable.
+standalone `.juro` engine. Existing `oojuro`, `oojurod` and `oojuro-native` commands
+and directory stores remain compatible. The `.juro` wire format remains
+experimental; this application does not declare it stable. New filenames use
+`.juro`; existing `.ojo` files remain readable and writable at their original
+paths. If both names exist for one identity, Journal refuses the ambiguity.
 
 ```sh
 cargo build --locked -p oojuro --bin ojo-journal
@@ -19,7 +21,7 @@ target/debug/ojo-journal search --query "deployment decision"
 
 Connect installs a per-user Linux service, excludes existing transcript history
 by default, and verifies an owned synthetic transcript through the actual parser
-and durable `.ojo` path. It never adds a test line to your agent's transcript.
+and durable `.juro` path. It never adds a test line to your agent's transcript.
 The service keeps healthy session handles and supplies capture, CLI and local MCP
 reads through a private Unix socket. Connect registers the selected agent's
 read-only MCP server and verifies its synthetic original; restart the agent to
@@ -57,12 +59,12 @@ See the [alpha commands, migration and qualification](docs/OJO_JOURNAL_ALPHA.md)
 
 | Repository | Responsibility |
 | --- | --- |
-| [oojuro](https://github.com/oojuro/oojuro) | Embedded storage, compression, durability and retrieval; the independently versioned `.ojo` database format |
+| [oojuro](https://github.com/oojuro/oojuro) | Embedded storage, compression, durability and retrieval; the independently versioned `.juro` database format |
 | [o-journal](https://github.com/oojuro/o-journal) | Agent-specific recording, integrations and history tools |
 | [o-cloud](https://github.com/oojuro/o-cloud) | Managed hosting, sharing, accounts, billing and the `oojuro.com` website |
 | [o-release-operator](https://github.com/oojuro/o-release-operator) | Trusted Oojuro release coordination |
 
-The primary application stores one encrypted `.ojo` file per provider session.
+The primary application stores one encrypted `.juro` file per provider session.
 Explicit migration preserves existing directory stores and creates a complete
 encrypted recovery snapshot before converting their records. Compatibility
 commands keep their original formats; no store is silently upgraded.

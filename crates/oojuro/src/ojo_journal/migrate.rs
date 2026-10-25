@@ -1,5 +1,5 @@
 //! Explicit copy-first migration. The source is locked, snapshotted byte-for-byte
-//! into an encrypted .ojo recovery artifact, and decoded only from a private copy.
+//! into an encrypted .juro recovery artifact, and decoded only from a private copy.
 use super::{JournalRoot, Record, Result, store};
 use crate::{hosted::read_private, hosted_capture as shared};
 use ojo::{Change, Database};
@@ -304,9 +304,9 @@ pub fn migrate_legacy(root: &JournalRoot, source: &Path) -> Result<MigrationRepo
         entries.push(entry);
     }
     let artifact = identity.finalize().to_hex().to_string();
-    let final_path = directory.join(format!("{artifact}.ojo"));
+    let final_path = store::database_path(&directory, &artifact)?;
     if !final_path.exists() {
-        let temporary = directory.join(format!(".migration-pending-{}.ojo", shared::random_id()?));
+        let temporary = directory.join(format!(".migration-pending-{}.juro", shared::random_id()?));
         let result: Result<()> = (|| {
             let mut db = Database::create(&temporary, root.file_key()).map_err(map)?;
             for (index, entry) in entries.iter().enumerate() {
@@ -379,6 +379,9 @@ pub fn migrate_legacy(root: &JournalRoot, source: &Path) -> Result<MigrationRepo
         if m.format != 1 || m.id != artifact || m.source_id != source_id {
             return Err("migration_artifact_conflict");
         }
+        File::open(&directory)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| "migration_publication_outcome_unknown")?;
     }
     // Only the private copy is opened by legacy code: recovery and derived cache
     // work can never mutate the source the user asked to preserve.
@@ -691,7 +694,7 @@ pub fn restore_migration(root: &JournalRoot, artifact: &str, out: &Path) -> Resu
         return Err("new_absolute_restore_directory_required");
     }
     shared::ancestors(out)?;
-    let path = root.path.join("migrations").join(format!("{artifact}.ojo"));
+    let path = store::database_path(&root.path.join("migrations"), artifact)?;
     let mut db = Database::open(path, root.file_key(), false).map_err(map)?;
     let manifest: Snapshot = serde_json::from_slice(
         &db.get(b"migration")
@@ -705,7 +708,7 @@ pub fn restore_migration(root: &JournalRoot, artifact: &str, out: &Path) -> Resu
     let staging = out
         .parent()
         .ok_or("invalid_restore_path")?
-        .join(format!(".ojo-restore-{}", shared::random_id()?));
+        .join(format!(".juro-restore-{}", shared::random_id()?));
     shared::directory(&staging)?;
     let result = (|| {
         for index in 0..manifest.files {

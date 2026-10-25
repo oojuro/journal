@@ -1,5 +1,5 @@
 #![cfg(target_os = "linux")]
-//! Actual .ojo application subprocesses; synthetic files and no provider access.
+//! Actual .juro application subprocesses; synthetic files and no provider access.
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -143,7 +143,7 @@ fn original_context_export_import_archive_and_mcp_work_through_the_real_cli() {
     )
     .unwrap();
     assert_eq!(original["input"]["text"], text);
-    let file = f.root().join("journals").join(format!("{run}.ojo"));
+    let file = f.root().join("journals").join(format!("{run}.juro"));
     assert_eq!(&fs::read(file).unwrap()[..8], b"OJOFILE\0");
 }
 fn write(path: &Path, value: Value) {
@@ -244,6 +244,14 @@ fn legacy_migration_preserves_the_source_and_restores_every_original_file_byte()
     ));
     assert_eq!(migrated["records"], 2);
     assert_eq!(inventory(&source), before);
+    let artifact = migrated["recovery_artifact"].as_str().unwrap();
+    let canonical = f.root().join("migrations").join(format!("{artifact}.juro"));
+    let legacy = canonical.with_extension("ojo");
+    assert!(canonical.exists());
+    assert!(!legacy.exists());
+    let snapshot = fs::read(&canonical).unwrap();
+    // This fixture represents an artifact produced by an older release.
+    fs::rename(&canonical, &legacy).unwrap();
     let repeated = ok(f.call(
         "migrate",
         &[
@@ -254,6 +262,32 @@ fn legacy_migration_preserves_the_source_and_restores_every_original_file_byte()
     ));
     assert_eq!(repeated["records"], 0);
     assert_eq!(repeated["deduplicated"], 2);
+    assert!(!canonical.exists());
+    assert_eq!(fs::read(&legacy).unwrap(), snapshot);
+    fs::copy(&legacy, &canonical).unwrap();
+    let refused = f.0.join("ambiguous-restore");
+    assert!(
+        !f.call(
+            "restore-migration",
+            &["--migration", artifact, "--out", refused.to_str().unwrap()]
+        )
+        .status
+        .success()
+    );
+    assert!(!refused.exists());
+    assert!(
+        !f.call(
+            "migrate",
+            &[
+                "--legacy-root",
+                source.to_str().unwrap(),
+                "--allow-raw-source"
+            ]
+        )
+        .status
+        .success()
+    );
+    fs::remove_file(&canonical).unwrap();
     assert_eq!(
         ok(f.call("search", &["--query", "legacy exact"]))["matches"][0]["input"]["text"],
         "legacy exact café\r\noriginal"
@@ -518,7 +552,7 @@ fn healthy_owner_reuses_handles_routes_capture_queries_and_survives_client_loss(
     let key: [u8; 32] = fs::read(f.root().join("key")).unwrap().try_into().unwrap();
     assert!(
         ojo::Database::open(
-            f.root().join("journals").join(format!("{run}.ojo")),
+            f.root().join("journals").join(format!("{run}.juro")),
             Some(&key),
             true
         )

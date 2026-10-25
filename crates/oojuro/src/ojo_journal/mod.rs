@@ -1,4 +1,4 @@
-//! Session journals backed by the standalone `.ojo` file engine.
+//! Session journals backed by the standalone `.juro` file engine.
 //!
 //! The application owns session routing, capture policy and derived views. Every
 //! accepted original is stored as opaque UTF-8 bytes in one encrypted file per

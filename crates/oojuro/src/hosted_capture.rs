@@ -668,7 +668,7 @@ impl Spool {
         if let Some(batch) = &self.state.pending {
             #[cfg(target_os = "linux")]
             {
-                // The supported .ojo original exists before any remote ACK. An
+                // The supported .juro original exists before any remote ACK. An
                 // unknown remote outcome retries the same IDs and cannot append
                 // another local record. Existing spool/control compatibility stays.
                 let local =
@@ -962,7 +962,7 @@ fn event(
         },
     })
 }
-/// Shared parser/session identity for the `.ojo` local application path.
+/// Shared parser/session identity for the `.juro` local application path.
 pub(crate) fn journal_run(path: &Path, format: Format, agent: &str) -> Result<String> {
     session::run(path, format, agent)
 }
