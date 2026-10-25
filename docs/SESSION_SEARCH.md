@@ -60,7 +60,7 @@ complete original text.
 | Warm owner query, p50 / p95 | 2.66 / 6.19 ms | 2.95 / 4.40 ms |
 | Warm public CLI, five samples | 3.80–5.03 ms | 2.43–5.62 ms |
 | Initial index build and query | 18.70 s | 18.35 s |
-| Append 100 rows, refresh and query | 144.82 ms | 174.16 ms |
+| Refresh and query after 100 new rows | 144.82 ms | 174.16 ms |
 | Owner restart through healthy status and first query | 811.37 ms | 1,267.33 ms |
 | Archived source reopen and query | 824.10 ms | 673.45 ms |
 
