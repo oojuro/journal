@@ -1,0 +1,65 @@
+{
+  "qualified_source_revision": "06150f3da5247d61ff744392cb4313b0823428b4",
+  "engine_revision": "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a",
+  "source_fence_format": 2,
+  "source_fence": "677f1e040f0afc3ee9f1bbe4ce290aa0a320c44dc52c947b1a37889fe0070a05",
+  "mutable_package_cleanup_observed": true,
+  "cleaned_profiles": [
+    "dev",
+    "release"
+  ],
+  "selected_engine_packages": [
+    "ojo",
+    "oojuro-core",
+    "oojuro-engine",
+    "oojuro-nine",
+    "oojuro-rank",
+    "oojuro-store",
+    "oojuro-trace"
+  ],
+  "registry_graph_unchanged": true,
+  "rust_application_compatibility_passed": 239,
+  "documented_ignored": 1,
+  "strict_application_all_targets_clippy": "pass",
+  "gates": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--no-default-features",
+        "--lib",
+        "--tests",
+        "-p",
+        "oojuro-capture",
+        "-p",
+        "oojuro-proxy",
+        "-p",
+        "oojuro",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 303.55014253000263,
+      "log_sha256": "a6520dcbb18aecbb8ee8e8ec12e044c1e41c77f6b0a772bb9dc416244c8cc48d"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--no-default-features",
+        "-p",
+        "oojuro",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 10.138407249993179,
+      "log_sha256": "20a243e23cf39b39f374deced3d25afa2f29910600db8dfd6c63f5c986edd8b1"
+    }
+  ],
+  "scope": "Dependency coherence and existing synthetic Rust compatibility only. Application/SDK/setup implementation unchanged; no new helper call site, performance, public artifact or hosted claim."
+}
