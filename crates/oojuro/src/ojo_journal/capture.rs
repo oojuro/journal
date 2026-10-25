@@ -333,7 +333,7 @@ fn capture_configured(
                 root.finish(&run, true)?;
                 source.finished = true;
             }
-            // Only advance after the entire accepted line is durable in its .ojo.
+            // Only advance after the entire accepted line is durable in its .juro.
             // A crash before cursor publication replays stable IDs without another record.
             source.offset += line.len() as u64;
             source.skip_partial = false;
@@ -359,7 +359,7 @@ pub struct Verification {
     pub synthetic: bool,
     pub parser_and_local_durability_verified: bool,
 }
-/// Sends an owned synthetic transcript through the same parser/cursor/.ojo path.
+/// Sends an owned synthetic transcript through the same parser/cursor/.juro path.
 /// It never writes to the provider's actual transcript directory.
 pub fn verify_pipeline(
     root: &JournalRoot,

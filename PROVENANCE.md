@@ -75,3 +75,12 @@ operations need no additional file sync. The Linux fault regression forces a
 completed append's fsync to fail, then refuses a reopened duplicate ACK while
 sync still fails. Exact retry succeeds with zero new records after confirmation,
 with original file bytes and raw/encrypted originals unchanged.
+
+## Canonical filename decision
+
+Owner decision [#110](https://github.com/oojuro/oojuro/issues/110) selects `.juro`
+for newly created database, session archive and recovery filenames. Existing
+`.ojo` paths are explicit legacy candidates and are never renamed automatically;
+two candidates for one identity are refused. This changes filenames and current
+guidance, not API/CLI names, header magic, wire/profile versions or frozen vectors.
+Earlier source/release/qualification artifacts above retain their original scope.

@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "ojo-journal — local .ojo agent journals and optional scoped cloud sync\n\nCommands: serve, upgrade-service, init, connect, capture, watch, sessions, search, timeline, get, context, record, export, import, migrate, restore-migration, finish, resume, archive, archive-idle, archive-policy, cloud-connect, sync, status, mcp\n\nGlobal: --root ABSOLUTE_DIRECTORY (default ~/.local/state/ojo-journal)\nconnect --adapter codex|claude-code [--source-root DIR] [--label NAME] --accept-local-capture [--include-existing] [--api-key-file PRIVATE_FILE] [--no-service] [--no-mcp|--register-mcp]\nrecord --session-id STABLE_ID --event-id STABLE_ID [--text-file FILE] [--kind explicit|input|output|tool_call|tool_result|system]\nsearch --query TEXT [--session ID] [--limit 10]\ntimeline --session ID [--from 0] [--limit 100]\nget/context --session ID --id SEQUENCE\nexport --session ID (JSONL on stdout); import --file JSONL\nfinish/resume/archive --session ID; archive-policy --enabled true|false\ncloud-connect --api-key-file PRIVATE_FILE [--base-url https://oojuro.com]\nsync [--max-batches 1000]; local recording needs no cloud account.\n";
+const HELP: &str = "ojo-journal — local .juro agent journals and optional scoped cloud sync\n\nCommands: serve, upgrade-service, init, connect, capture, watch, sessions, search, timeline, get, context, record, export, import, migrate, restore-migration, finish, resume, archive, archive-idle, archive-policy, cloud-connect, sync, status, mcp\n\nGlobal: --root ABSOLUTE_DIRECTORY (default ~/.local/state/ojo-journal)\nconnect --adapter codex|claude-code [--source-root DIR] [--label NAME] --accept-local-capture [--include-existing] [--api-key-file PRIVATE_FILE] [--no-service] [--no-mcp|--register-mcp]\nrecord --session-id STABLE_ID --event-id STABLE_ID [--text-file FILE] [--kind explicit|input|output|tool_call|tool_result|system]\nsearch --query TEXT [--session ID] [--limit 10]\ntimeline --session ID [--from 0] [--limit 100]\nget/context --session ID --id SEQUENCE\nexport --session ID (JSONL on stdout); import --file JSONL\nfinish/resume/archive --session ID; archive-policy --enabled true|false\ncloud-connect --api-key-file PRIVATE_FILE [--base-url https://oojuro.com]\nsync [--max-batches 1000]; local recording needs no cloud account.\n";
 struct Args {
     command: String,
     values: BTreeMap<String, String>,
@@ -263,7 +263,7 @@ pub fn run() -> Result<()> {
             return Err("setup_cloud_delivery_unconfirmed; local capture remains configured");
         }
         return emit(
-            &json!({"connected":true,"storage":"ojo","capture":report,"verification":verification,"cloud_confirmed":cloud_confirmed,"service_started":service,"mcp":mcp,"existing_history_selected":args.flags.contains("--include-existing"),"next":"New complete transcript lines are captured into one .ojo per provider session; use status to inspect durable records and sync confirmations."}),
+            &json!({"connected":true,"storage":"ojo","capture":report,"verification":verification,"cloud_confirmed":cloud_confirmed,"service_started":service,"mcp":mcp,"existing_history_selected":args.flags.contains("--include-existing"),"next":"New complete transcript lines are captured into one .juro per provider session; use status to inspect durable records and sync confirmations."}),
         );
     }
     let mut root = JournalRoot::open(&path)?;
@@ -759,7 +759,7 @@ fn mcp(root: &JournalRoot) -> Result<()> {
                 ),
                 "ping" => Ok(json!({})),
                 "tools/list" => Ok(json!({"tools":[
-                    {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"sessions","description":"List local .ojo session journals","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+                    {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"sessions","description":"List local .juro session journals","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
                     {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"search","description":"Search recorded originals in one local session","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"query":{"type":"string"}},"required":["session","query"],"additionalProperties":false}},
                     {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"get","description":"Read the exact original and its session metadata","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"id":{"type":"integer","minimum":0}},"required":["session","id"],"additionalProperties":false}}
                 ]})),

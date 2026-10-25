@@ -69,7 +69,7 @@ fn raw_and_encrypted_sessions_preserve_originals_retry_conflicts_pages_and_archi
             })
             .collect::<Vec<_>>();
         assert_eq!(root.append(&run, "batch-one", &records).unwrap(), 64);
-        let path = root.path.join("journals").join(format!("{run}.ojo"));
+        let path = root.path.join("journals").join(format!("{run}.juro"));
         let before = fs::read(&path).unwrap();
         assert_eq!(root.append(&run, "batch-one", &records).unwrap(), 0);
         assert_eq!(fs::read(&path).unwrap(), before);
@@ -168,7 +168,7 @@ fn actual_transcript_capture_is_account_free_session_stable_and_cursor_replay_sa
         root.get(&run, 0).unwrap().input.text,
         "new original café\r\ncontext"
     );
-    // A killed process can commit .ojo before publishing its private cursor.
+    // A killed process can commit .juro before publishing its private cursor.
     fs::write(root.path.join("cursor-codex.json"), cursor_before).unwrap();
     let replay = capture_once(&root, "codex").unwrap();
     assert_eq!(replay.stored, 0);
@@ -287,5 +287,62 @@ fn duplicate_only_new_batch_is_durably_bound_without_resuming_an_archived_sessio
                 .unwrap(),
             0
         );
+    }
+}
+
+#[test]
+fn juro_defaults_preserve_explicit_legacy_paths_and_refuse_dual_candidates() {
+    for encrypted in [false, true] {
+        let scratch = Scratch::new();
+        let root = scratch.root(encrypted);
+        let run = "3".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Filename fixture")
+            .unwrap();
+        let original = record(&root, &run, 1, "unchanged accepted original", true);
+        root.append(&run, "first-name-batch", std::slice::from_ref(&original))
+            .unwrap();
+        let canonical = root.path.join("journals").join(format!("{run}.juro"));
+        let legacy = canonical.with_extension("ojo");
+        assert!(canonical.exists());
+        assert!(!legacy.exists());
+        assert_eq!(&fs::read(&canonical).unwrap()[..8], b"OJOFILE\0");
+        // Fixture relocation simulates an old store. Application calls keep using
+        // the legacy path; no automatic rename or replacement occurs.
+        fs::rename(&canonical, &legacy).unwrap();
+        let old = fs::read(&legacy).unwrap();
+        let reopened = JournalRoot::open(&root.path).unwrap();
+        assert_eq!(
+            reopened.get(&run, 0).unwrap().input.text,
+            original.input.text
+        );
+        assert_eq!(
+            reopened
+                .append(&run, "first-name-batch", std::slice::from_ref(&original))
+                .unwrap(),
+            0
+        );
+        assert_eq!(fs::read(&legacy).unwrap(), old);
+        assert!(!canonical.exists());
+        assert_eq!(reopened.sessions().unwrap().len(), 1);
+        let next = record(&reopened, &run, 2, "append at original legacy path", true);
+        reopened.append(&run, "legacy-next", &[next]).unwrap();
+        assert!(legacy.exists());
+        assert!(!canonical.exists());
+        fs::copy(&legacy, &canonical).unwrap();
+        assert!(reopened.get(&run, 0).is_err());
+        assert!(reopened.sessions().is_err());
+        assert!(reopened.archive(&run).is_err());
+        assert!(
+            reopened
+                .ensure_session(
+                    &run,
+                    reopened.identity(),
+                    "synthetic/v1",
+                    "Filename fixture"
+                )
+                .is_err()
+        );
+        fs::remove_file(&canonical).unwrap();
+        assert_eq!(reopened.manifest(&run).unwrap().records, 2);
     }
 }

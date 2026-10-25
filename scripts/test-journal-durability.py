@@ -55,7 +55,9 @@ def main():
             original=scratch/'original.txt';original.write_text('Synthetic seed original\n')
             args=['--session-id','sync-fault-session','--event-id','seed','--text-file',str(original)]
             first=run('record',*args)
-            target=root/'journals'/(first['session']+'.ojo');before=target.stat().st_size
+            canonical=root/'journals'/(first['session']+'.juro');legacy=root/'journals'/(first['session']+'.ojo')
+            assert not (canonical.exists() and legacy.exists())
+            target=canonical if canonical.exists() else legacy;before=target.stat().st_size
             original.write_text('Synthetic durable exact café\0 original\r\n')
             args[3]='unknown-sync-event'
             fault=dict(os.environ,LD_PRELOAD=str(shim),OJO_JOURNAL_FAULT_FILE=str(target),OJO_JOURNAL_FAULT_AFTER=str(before))

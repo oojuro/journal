@@ -76,6 +76,27 @@ pub(crate) fn opaque(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+/// New files use .juro. Existing .ojo files retain their exact names. Two
+/// candidates are an ambiguity, regardless of whether their bytes happen to match.
+pub(crate) fn database_path(directory: &Path, stem: &str) -> Result<PathBuf> {
+    if !opaque(stem) {
+        return Err("invalid_database_identity");
+    }
+    fn present(path: &Path) -> Result<bool> {
+        match fs::symlink_metadata(path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(_) => Err("database_path_unavailable"),
+        }
+    }
+    let canonical = directory.join(format!("{stem}.juro"));
+    let legacy = directory.join(format!("{stem}.ojo"));
+    match (present(&canonical)?, present(&legacy)?) {
+        (true, true) => Err("ambiguous_database_filename; both .juro and legacy .ojo exist"),
+        (false, true) => Ok(legacy),
+        _ => Ok(canonical),
+    }
+}
 fn name(s: &str) -> Result<()> {
     if s.is_empty() || s.len() > 128 || s.trim() != s || s.chars().any(char::is_control) {
         return Err("invalid_journal_label");
@@ -319,7 +340,7 @@ impl JournalRoot {
         if !opaque(run) {
             return Err("invalid_session_identity");
         }
-        Ok(self.path.join("journals").join(format!("{run}.ojo")))
+        database_path(&self.path.join("journals"), run)
     }
     fn lock(&self, run: &str) -> Result<File> {
         self.session_path(run)?;
@@ -483,21 +504,28 @@ impl JournalRoot {
         if let Some(value) = self.remote(super::owner::Action::Sessions)? {
             return Ok(value);
         }
+        let mut identities = std::collections::BTreeSet::new();
         let mut sessions = Vec::new();
         for entry in
             fs::read_dir(self.path.join("journals")).map_err(|_| "journal_directory_unavailable")?
         {
             let entry = entry.map_err(|_| "journal_directory_unavailable")?;
             let name = entry.file_name();
-            let Some(run) = name.to_str().and_then(|s| s.strip_suffix(".ojo")) else {
+            let Some(run) = name
+                .to_str()
+                .and_then(|s| s.strip_suffix(".juro").or_else(|| s.strip_suffix(".ojo")))
+            else {
                 continue;
             };
             if opaque(run) {
-                if sessions.len() >= 10_000 {
-                    return Err("journal_count_bound");
-                }
-                sessions.push(self.manifest(run)?);
+                identities.insert(run.to_string());
             }
+            if identities.len() > 10_000 {
+                return Err("journal_count_bound");
+            }
+        }
+        for run in identities {
+            sessions.push(self.manifest(&run)?);
         }
         sessions.sort_by(|a, b| {
             b.last_activity_us
@@ -567,7 +595,7 @@ impl JournalRoot {
         let temporary = self
             .path
             .join("journals")
-            .join(format!(".archive-{}.ojo", hosted_capture::random_id()?));
+            .join(format!(".archive-{}.juro", hosted_capture::random_id()?));
         db.archive_to(&temporary).map_err(error)?;
         drop(db);
         let checked = (|| {
