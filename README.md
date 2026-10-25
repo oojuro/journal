@@ -73,10 +73,12 @@ Oojuro is a general embedded database. Its generic event contract is an engine
 acceptance timestamp plus exact opaque data; agent, session, provider and tool
 fields belong to Journal's application data. Engine full-text indexes and query
 execution provide generic retrieval; Journal chooses capture, session filters,
-context expansion and access policy. This alpha's session files use the existing
-wire 0.1 key/value API. They do not already implement the additive generic Event
-profile; adopting that profile requires an explicit, verified application
-migration with exact originals and retry mappings preserved.
+context expansion and access policy. New sessions use the additive generic Event
+profile inside wire 0.1. Journal's [application grammar](docs/SESSION_EVENT_PROFILE.md)
+keeps agent metadata in control events and each original's exact bytes in its own
+engine event. Existing KV session files retain their meaning. Explicit
+`migrate-session --session ID` retains a verified recovery database before
+conversion, preserving originals and retry mappings.
 
 ## Build and check
 

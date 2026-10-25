@@ -6,6 +6,14 @@ private root's `journals/` directory. A separate 0600 local key encrypts origina
 by default. Operational configuration/cursors are private 0600 files. Existing
 compatibility commands and library APIs are preserved.
 
+New sessions use the generic timestamp-and-bytes Event API with
+[Journal application profile 1](SESSION_EVENT_PROFILE.md). Agent metadata stays
+in application control events; each original's engine event contains its exact
+text. A matching Commit makes a whole capture batch visible. Original intents in
+the preceding Begin preserve engine timestamps/cursors after unknown
+acknowledgements and torn writes. An unresolved batch requires the exact
+source/caller retry before another mutation.
+
 Initialization creates missing root ancestors with mode0700 and confirms their
 parent directory entries before success. Existing ancestor modes and metadata
 are preserved. Opening a root confirms its protected identity/key files and
@@ -107,6 +115,7 @@ Project read keys remain separate from capture grants.
 ojo-journal export --session SESSION_ID > session.jsonl
 ojo-journal import --file session.jsonl
 ojo-journal migrate --legacy-root /private/old-journal --allow-raw-source
+ojo-journal migrate-session --session SESSION_ID
 ojo-journal restore-migration --migration RECOVERY_ARTIFACT_ID --out /private/new-restore
 ```
 
@@ -114,6 +123,14 @@ Export includes the manifest and complete original records. Import is retry-safe
 and leaves the input file untouched. Migration supports native capture, direct
 Record2 and original Trace journal directories. Stop the legacy recorder first;
 all existing source locks must be acquired. The destination must use encryption.
+
+`migrate-session` converts an existing standalone KV session explicitly. It first
+retains a verified byte-exact recovery database under `format-backups/SESSION_ID/`,
+then copies and verifies every live key, original and retry fingerprint before
+replacing the selected file. Its encryption policy and any legacy `.ojo` filename
+remain unchanged. KV originals had no generic per-original engine acceptance
+time; conversion assigns one while preserving application timestamps. The recovery
+database remains readable with the earlier engine and original root key.
 
 Migration snapshots every regular source file, including raw/control state and
 old keys, into a separate encrypted `.juro` recovery artifact before converting

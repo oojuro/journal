@@ -1,6 +1,9 @@
 use super::Result;
 use crate::{hosted::read_private, hosted_capture};
-use ojo::{Change, Database};
+use ojo::Change;
+use super::session_file::SessionFile as Database;
+mod format_migration;
+pub use format_migration::FormatMigration;
 use oojuro_engine::record::Input;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -222,8 +225,11 @@ fn confirmed_private(path: &Path, limit: usize) -> Result<Vec<u8>> {
         .map_err(|_| "journal_metadata_sync_failed")?;
     Ok(bytes)
 }
-fn error(_: ojo::Error) -> &'static str {
-    "ojo_journal_unavailable_or_corrupt"
+fn error(error: ojo::Error) -> &'static str {
+    match error {
+        ojo::Error::Invalid("pending_journal_batch_requires_original_retry") => "pending_journal_batch_requires_original_retry",
+        _ => "ojo_journal_unavailable_or_corrupt",
+    }
 }
 fn read_manifest(db: &mut Database) -> Result<Manifest> {
     let bytes = db

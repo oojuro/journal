@@ -8,12 +8,13 @@ pub mod cli;
 mod migrate;
 mod owner;
 mod setup;
+mod session_file;
 mod store;
 mod sync;
 
 pub use capture::{CaptureReport, Verification, capture_once, connect_local, verify_pipeline};
 pub use migrate::{MigrationReport, migrate_legacy, restore_migration};
-pub use store::{JournalRoot, Manifest, Page, Record};
+pub use store::{FormatMigration, JournalRoot, Manifest, Page, Record};
 pub use sync::{SyncReport, sync_cloud};
 
 pub type Result<T> = std::result::Result<T, &'static str>;
