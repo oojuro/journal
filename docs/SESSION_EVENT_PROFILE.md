@@ -34,8 +34,9 @@ Begin uses this bounded binary encoding. Integers are unsigned big endian.
 | Each key | u32 byte length, then 1–1,024 exact key bytes |
 | Each value | One tag byte, followed by its tag-specific representation |
 
-Tag 0 deletes the application key. Tag 1 contains a u32 byte length and inline
-value bytes. Tag 2 contains the original's u32 length, 32-byte BLAKE3 digest and
+Tag 0 encodes deletion, which profile 1 refuses. Tag 1 contains a u32 byte length
+and inline metadata bytes; `v/` and `s/` originals must use tag 2.
+Tag 2 contains the original's u32 length, 32-byte BLAKE3 digest and
 80 opaque bytes from the engine's `AppendIntent::to_bytes()`. Tag 2 is permitted
 only for `v/` (indexed) and `s/` (unindexed) originals. Duplicate keys and trailing
 bytes are refused. Begin is at most 16 MiB; the sum of original bytes is at most
@@ -44,14 +45,22 @@ the same application values used by the compatibility KV implementation.
 
 Original events follow in Begin's tag-2 order. The reader checks length and
 digest, then uses the engine's `AppendIntent::check_event` on the observed
-receipt and data to verify the retained cursor, acceptance time and exact data. Original text that resembles a control
-marker is still interpreted as an original in that declared position.
+receipt and data to verify the retained cursor, acceptance time and exact data.
+Original text that resembles a control marker is still interpreted as an
+original in that declared position.
 
 Commit is exactly the eight bytes `OJJCOM1\0`, the same 16-byte application
 request, and the 32-byte BLAKE3 digest of the complete Begin bytes. Application
 state becomes visible only after that matching Commit. An unrelated event,
 changed original, wrong order or mismatched Commit refuses the application
 grammar; source bytes remain available to generic engine tools.
+
+Only the manifest may be replaced. Other application keys, original bytes,
+record identity and indexing eligibility remain immutable. New indexed sequence
+keys must be strictly greater than the retained indexed prefix. Replay validates
+these transitions before recovery; live writes validate them before appending.
+This allows the disposable lexical index to extend an authenticated unchanged
+prefix while retaining the same source of original context.
 
 A new transaction submits Begin, original events and Commit with the engine's
 bounded group-durability API. Success requires the final file and directory

@@ -4,6 +4,7 @@ mod grammar;
 mod legacy;
 mod pending;
 mod replay;
+mod search;
 #[cfg(test)]
 mod tests;
 use grammar::{Batch, Cell, PROFILE};
@@ -24,6 +25,8 @@ pub(super) struct Events {
     unfinished: Option<Batch>,
     cached: Option<(Cursor, Vec<u8>)>,
     anchor: Option<Cursor>,
+    indexed_view: blake3::Hasher,
+    query: Option<search::Search>,
 }
 impl SessionFile {
     pub fn create(path: impl AsRef<Path>, key: Option<&[u8; 32]>) -> Result<Self> {
@@ -36,6 +39,8 @@ impl SessionFile {
             unfinished: None,
             cached: None,
             anchor: Some(anchor),
+            indexed_view: search::view(),
+            query: None,
         })))
     }
     pub fn open(path: impl AsRef<Path>, key: Option<&[u8; 32]>, writable: bool) -> Result<Self> {
@@ -76,6 +81,7 @@ impl SessionFile {
         if state.anchor.is_none() {
             return Err(Error::Invalid("Journal application profile required"));
         }
+        let indexed_view = search::from_values(&state.values)?;
         let mut file = Events {
             journal,
             values: state.values,
@@ -83,6 +89,8 @@ impl SessionFile {
             unfinished: state.unfinished,
             cached: None,
             anchor: state.anchor,
+            indexed_view,
+            query: None,
         };
         if writable {
             file.reconcile()?;
@@ -188,7 +196,25 @@ impl SessionFile {
 }
 impl Events {
     fn apply(&mut self, batch: Batch) -> Result<()> {
-        replay::apply(&mut self.values, &mut self.requests, batch)
+        let updates = batch
+            .changes
+            .iter()
+            .filter(|(key, _)| key.starts_with(b"v/"))
+            .map(|(key, cell)| {
+                Ok((
+                    key.clone(),
+                    cell.as_ref()
+                        .and_then(|cell| cell.original_proof)
+                        .ok_or(Error::Corrupt("Journal indexed original proof"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        replay::apply(&mut self.values, &mut self.requests, batch)?;
+        for (key, proof) in updates {
+            self.indexed_view.update(&key);
+            self.indexed_view.update(&proof);
+        }
+        Ok(())
     }
     fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let Some(cell) = self.values.get(key) else {

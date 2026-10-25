@@ -1,0 +1,444 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "runtime_commit": "ef9b1312b0efe7ba12d9884441c1412ef9cfa6e6",
+  "engine_commit": "2d8dfe73a435afda5bc64904664037a23ee4ed7d",
+  "binary_sha256": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4",
+  "synthetic_only": true,
+  "environment": {
+    "cpu": "Intel Core Ultra 7 258V",
+    "architecture": "x86_64",
+    "build": "Rust 1.99.1, optimized, generic x86-64",
+    "isolation": "shared benchmark lock; sequential encrypted and plaintext scenarios",
+    "cache": "OS caches not flushed; process restart measured separately"
+  },
+  "checks": [
+    {
+      "command": "cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p oojuro-proxy -p oojuro -- --test-threads=1",
+      "result": "passed",
+      "scope": "Full compatibility on the final engine pin before the final manifest-deletion refusal; all affected paths repeated below."
+    },
+    {
+      "command": "cargo test --locked --no-default-features -p oojuro --lib ojo_ -- --test-threads=1",
+      "passed": 17
+    },
+    {
+      "command": "cargo test --locked --no-default-features -p oojuro --test ojo_journal_cli -- --test-threads=1",
+      "passed": 6
+    },
+    {
+      "command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/test-journal-namespace.py --binary /qualified/ojo-journal",
+      "passed_fault_cases": 5
+    },
+    {
+      "command": "python3 scripts/test-journal-durability.py --binary /qualified/ojo-journal",
+      "passed_fault_cases": 2
+    },
+    {
+      "command": "python3 scripts/test-install-journal.py",
+      "passed": 6
+    },
+    {
+      "command": "python3 scripts/test-connect-agent.py",
+      "passed": 2
+    },
+    {
+      "command": "python3 scripts/test-connect-project.py",
+      "passed": 3
+    },
+    {
+      "command": "python3 scripts/test-setup-agent.py",
+      "passed": 3
+    },
+    {
+      "command": "python3 scripts/test_package_native.py",
+      "passed": 6
+    },
+    {
+      "command": "node --test sdk/typescript/test/*.test.js",
+      "passed": 114,
+      "node": "24.22.1"
+    },
+    {
+      "command": "cargo build --release --locked --no-default-features -p oojuro --bins",
+      "exit": 0
+    }
+  ],
+  "observed": [
+    "Immutable originals/metadata and strictly appended indexed keys are checked during replay before writable tail recovery.",
+    "Missing/corrupt disposable caches rebuild; mutation and query paths preserve exact originals.",
+    "Healthy source handles remain retained while at most one numeric session projection remains in memory.",
+    "Both actual owner-IPC scenarios verify exact full originals after warm search, incremental refresh, process restart and archive.",
+    "All owned fixture datasets, child service processes and sockets were removed."
+  ],
+  "scenarios": [
+    {
+      "format": 1,
+      "synthetic_only": true,
+      "encrypted": true,
+      "fixture_rows": 100000,
+      "original_bytes_per_fixture_row": 1024,
+      "scope": "One Event session; actual private owner IPC and complete original materialization. No cross-session, transcript ingestion throughput, or OS-cache-cold claim.",
+      "grouped_owner_population_ms": 18187.756727,
+      "source_bytes_before_index_build": 193374081,
+      "initial_index_build_and_query_ms": 18702.50961,
+      "warm_owner_queries": [
+        {
+          "query": "needlecobalt",
+          "ms": 2.148219
+        },
+        {
+          "query": "transaction",
+          "ms": 8.705928
+        },
+        {
+          "query": "record050000",
+          "ms": 1.137053
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 4.436796
+        },
+        {
+          "query": "transaction",
+          "ms": 4.909621
+        },
+        {
+          "query": "record050000",
+          "ms": 1.395888
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 5.450173
+        },
+        {
+          "query": "transaction",
+          "ms": 6.191643
+        },
+        {
+          "query": "record050000",
+          "ms": 1.118924
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 5.538708
+        },
+        {
+          "query": "transaction",
+          "ms": 3.774382
+        },
+        {
+          "query": "record050000",
+          "ms": 0.493079
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 2.714197
+        },
+        {
+          "query": "transaction",
+          "ms": 2.734758
+        },
+        {
+          "query": "record050000",
+          "ms": 0.442195
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 2.556032
+        },
+        {
+          "query": "transaction",
+          "ms": 2.001562
+        },
+        {
+          "query": "record050000",
+          "ms": 0.708476
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 2.748614
+        },
+        {
+          "query": "transaction",
+          "ms": 2.662324
+        }
+      ],
+      "warm_owner_p50_ms": 2.662324,
+      "warm_owner_p95_ms": 6.191643,
+      "warm_public_cli_ms": [
+        4.126653,
+        5.031975,
+        3.796498,
+        3.88665,
+        4.275931
+      ],
+      "owner_before_reopen": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 1,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 1,
+            "estimated_heap_bytes": 36381194,
+            "index_bytes": 62336144,
+            "refreshes": 0,
+            "reopens": 0,
+            "rows": 100001
+          }
+        ]
+      },
+      "incremental_refresh_and_query_ms": 144.824009,
+      "owner_after_refresh": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 1,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 1,
+            "estimated_heap_bytes": 36389573,
+            "index_bytes": 71059032,
+            "refreshes": 1,
+            "reopens": 0,
+            "rows": 100101
+          }
+        ]
+      },
+      "restart_until_healthy_ms": 777.716567,
+      "first_query_after_restart_ms": 33.650543,
+      "restart_and_first_query_ms": 811.36711,
+      "owner_after_reopen": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 1,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 0,
+            "estimated_heap_bytes": 36392476,
+            "index_bytes": 71059032,
+            "refreshes": 0,
+            "reopens": 1,
+            "rows": 100101
+          }
+        ]
+      },
+      "source_bytes_before_archive": 193568606,
+      "archive_ms": 2882.762215,
+      "source_bytes_after_archive": 50003590,
+      "archived_reopen_and_query_ms": 824.102933,
+      "owner_after_archive": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 2,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 0,
+            "estimated_heap_bytes": 36392476,
+            "index_bytes": 71059032,
+            "refreshes": 0,
+            "reopens": 1,
+            "rows": 100101
+          }
+        ]
+      },
+      "source_rows": 100101,
+      "owned_dataset_and_processes_removed": true,
+      "source_commit": "ef9b1312b0efe7ba12d9884441c1412ef9cfa6e6",
+      "engine_commit": "2d8dfe73a435afda5bc64904664037a23ee4ed7d",
+      "binary_sha256": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4"
+    },
+    {
+      "format": 1,
+      "synthetic_only": true,
+      "encrypted": false,
+      "fixture_rows": 100000,
+      "original_bytes_per_fixture_row": 1024,
+      "scope": "One Event session; actual private owner IPC and complete original materialization. No cross-session, transcript ingestion throughput, or OS-cache-cold claim.",
+      "grouped_owner_population_ms": 17836.905743,
+      "source_bytes_before_index_build": 189293801,
+      "initial_index_build_and_query_ms": 18345.994429,
+      "warm_owner_queries": [
+        {
+          "query": "needlecobalt",
+          "ms": 1.779644
+        },
+        {
+          "query": "transaction",
+          "ms": 9.006281
+        },
+        {
+          "query": "record050000",
+          "ms": 2.193486
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 3.319554
+        },
+        {
+          "query": "transaction",
+          "ms": 4.398652
+        },
+        {
+          "query": "record050000",
+          "ms": 1.291975
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 3.363551
+        },
+        {
+          "query": "transaction",
+          "ms": 2.824505
+        },
+        {
+          "query": "record050000",
+          "ms": 1.497131
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 3.969243
+        },
+        {
+          "query": "transaction",
+          "ms": 2.953799
+        },
+        {
+          "query": "record050000",
+          "ms": 1.667425
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 3.853559
+        },
+        {
+          "query": "transaction",
+          "ms": 3.588281
+        },
+        {
+          "query": "record050000",
+          "ms": 1.083862
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 3.82781
+        },
+        {
+          "query": "transaction",
+          "ms": 3.461099
+        },
+        {
+          "query": "record050000",
+          "ms": 0.909422
+        },
+        {
+          "query": "needlecobalt",
+          "ms": 4.226019
+        },
+        {
+          "query": "transaction",
+          "ms": 2.737052
+        }
+      ],
+      "warm_owner_p50_ms": 2.953799,
+      "warm_owner_p95_ms": 4.398652,
+      "warm_public_cli_ms": [
+        5.624447,
+        3.498989,
+        2.430298,
+        3.301605,
+        3.410508
+      ],
+      "owner_before_reopen": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 1,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 1,
+            "estimated_heap_bytes": 36381194,
+            "index_bytes": 62352644,
+            "refreshes": 0,
+            "reopens": 0,
+            "rows": 100001
+          }
+        ]
+      },
+      "incremental_refresh_and_query_ms": 174.159472,
+      "owner_after_refresh": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 1,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 1,
+            "estimated_heap_bytes": 36389573,
+            "index_bytes": 71078030,
+            "refreshes": 1,
+            "reopens": 0,
+            "rows": 100101
+          }
+        ]
+      },
+      "restart_until_healthy_ms": 1252.555238,
+      "first_query_after_restart_ms": 14.772281,
+      "restart_and_first_query_ms": 1267.327519,
+      "owner_after_reopen": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 2,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 0,
+            "estimated_heap_bytes": 36392476,
+            "index_bytes": 71078030,
+            "refreshes": 0,
+            "reopens": 1,
+            "rows": 100101
+          }
+        ]
+      },
+      "source_bytes_before_archive": 189484166,
+      "archive_ms": 2111.747985,
+      "source_bytes_after_archive": 45927474,
+      "archived_reopen_and_query_ms": 673.45337,
+      "owner_after_archive": {
+        "handle_capacity": 8,
+        "open_handles": 1,
+        "verified_opens": 3,
+        "search_projection_capacity": 1,
+        "search": [
+          {
+            "builds": 0,
+            "estimated_heap_bytes": 36392476,
+            "index_bytes": 71078030,
+            "refreshes": 0,
+            "reopens": 1,
+            "rows": 100101
+          }
+        ]
+      },
+      "source_rows": 100101,
+      "owned_dataset_and_processes_removed": true,
+      "source_commit": "ef9b1312b0efe7ba12d9884441c1412ef9cfa6e6",
+      "engine_commit": "2d8dfe73a435afda5bc64904664037a23ee4ed7d",
+      "binary_sha256": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4"
+    }
+  ],
+  "limitations": [
+    "Per-session ranking only; default cross-session CLI visits recent sessions.",
+    "First index build is synchronous and shares the database mutex with capture.",
+    "Full source replay occurs on a new source handle; startup may perform that work before reporting healthy.",
+    "No OS-cache-cold, million-record app latency, transcript ingestion throughput, process RSS, published installation or cloud deployment claim."
+  ]
+}

@@ -357,8 +357,25 @@ impl JournalRoot {
         }
     }
     fn with_db<T>(&self, run: &str, action: impl FnOnce(&mut Database) -> Result<T>) -> Result<T> {
+        self.with_db_mode(run, false, action)
+    }
+    fn with_db_mode<T>(
+        &self,
+        run: &str,
+        search: bool,
+        action: impl FnOnce(&mut Database) -> Result<T>,
+    ) -> Result<T> {
         if let Some(pool) = &self.pool {
             let mut pool = pool.lock().map_err(|_| "owner_unhealthy")?;
+            // Source handles remain hot, while at most one session retains its
+            // numeric search projection. Other session indexes remain on disk.
+            if search {
+                for writer in &mut pool.writers {
+                    if writer.run != run {
+                        writer.db.discard_search();
+                    }
+                }
+            }
             let mut writer = if let Some(i) = pool.writers.iter().position(|w| w.run == run) {
                 let writer = pool.writers.remove(i).unwrap();
                 if writer.stamp == self.stamp(run)? {
@@ -403,7 +420,8 @@ impl JournalRoot {
         }
         self.pool.as_ref().map(|pool| {
             let pool=pool.lock().map_err(|_|"owner_unhealthy")?;
-            Ok(serde_json::json!({"healthy":true,"root":self.identity(),"storage":"ojo","handle_capacity":8,"open_handles":pool.writers.len(),"verified_opens":pool.opens,"socket":super::owner::socket(self)?}))
+            let search=pool.writers.iter().filter_map(|writer|writer.db.search_status()).collect::<Vec<_>>();
+            Ok(serde_json::json!({"healthy":true,"root":self.identity(),"storage":"ojo","handle_capacity":8,"open_handles":pool.writers.len(),"verified_opens":pool.opens,"search_projection_capacity":1,"search":search,"socket":super::owner::socket(self)?}))
         }).transpose()
     }
     fn stamp(&self, run: &str) -> Result<Stamp> {
@@ -662,7 +680,62 @@ impl JournalRoot {
         })? {
             return Ok(value);
         }
-        self.with_db(run, |db| search_from(db, query, limit))
+        if !opaque(run) {
+            return Err("invalid_session_identity");
+        }
+        if query.is_empty()
+            || query.len() > 4096
+            || !(1..=32).contains(&query.split_whitespace().count())
+            || !(1..=100).contains(&limit)
+        {
+            return Err("journal_query_bound");
+        }
+        let cache_key = self.search_key()?;
+        let cache = self.path.join("search").join(run);
+        let namespace = *blake3::hash(self.identity().as_bytes()).as_bytes();
+        self.with_db_mode(run, true, |db| {
+            let Some(indices) = db
+                .indexed_search(&cache, &cache_key, namespace, run, query, limit)
+                .map_err(error)?
+            else {
+                return search_from(db, query, limit);
+            };
+            let mut records = Vec::new();
+            let mut bytes = 0usize;
+            for index in indices {
+                let record = get_from(db, index)?;
+                bytes += record.input.text.len();
+                if bytes > MAX_TEXT {
+                    break;
+                }
+                if !record.input.indexed {
+                    return Err("journal_index_eligibility_mismatch");
+                }
+                records.push(record);
+            }
+            Ok(records)
+        })
+    }
+    fn search_key(&self) -> Result<[u8; 32]> {
+        let material = match self.key {
+            Some(key) => key,
+            None => {
+                let path = self.path.join("search-key");
+                if !path.exists() {
+                    // A racing creator or a failed prior sync is settled by
+                    // the protected same-inode confirmation below.
+                    let _ =
+                        hosted_capture::create_private(&path, &ojo::generate_key().map_err(error)?);
+                }
+                confirmed_private(&path, 32)?
+                    .try_into()
+                    .map_err(|_| "invalid_search_key")?
+            }
+        };
+        Ok(blake3::derive_key(
+            "ojo-journal/disposable-search-key/v1",
+            &material,
+        ))
     }
     pub fn finish(&self, run: &str, finished: bool) -> Result<Manifest> {
         if let Some(value) = self.remote(super::owner::Action::Finish {

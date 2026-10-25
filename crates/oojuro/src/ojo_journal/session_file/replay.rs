@@ -47,6 +47,29 @@ pub(super) fn apply(
     requests: &mut BTreeMap<[u8; 16], Cursor>,
     batch: Batch,
 ) -> Result<()> {
+    // App profile1 leaves original values, eligibility and record identity
+    // immutable; only manifest lifecycle metadata may be replaced. Validate
+    // this in replay as well as live writes before trusting an index prefix.
+    let mut previous = values
+        .range(b"v/".to_vec()..b"w".to_vec())
+        .next_back()
+        .map(|(key, _)| key.clone());
+    for (key, value) in &batch.changes {
+        if value.is_none() || key != b"manifest" && values.contains_key(key) {
+            return Err(Error::Corrupt("immutable Journal application value"));
+        }
+        if key.starts_with(b"v/") {
+            if key.len() != 10
+                || previous.as_ref().is_some_and(|previous| key <= previous)
+                || value
+                    .as_ref()
+                    .is_none_or(|cell| cell.original_proof.is_none())
+            {
+                return Err(Error::Corrupt("Journal indexed immutable prefix"));
+            }
+            previous = Some(key.clone());
+        }
+    }
     if requests.contains_key(&batch.request) {
         return Err(Error::Corrupt("duplicate application transaction"));
     }

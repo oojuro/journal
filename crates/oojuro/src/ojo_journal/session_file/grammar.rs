@@ -14,6 +14,7 @@ const MAX_CHANGES: usize = 1000;
 pub(super) struct Cell {
     pub cursor: Cursor,
     pub range: Option<(usize, usize)>,
+    pub original_proof: Option<[u8; 32]>,
 }
 struct Original {
     key: Vec<u8>,
@@ -59,6 +60,9 @@ impl Batch {
             match reader.take(1)?[0] {
                 0 => changes.push((key, None)),
                 1 => {
+                    if key.starts_with(b"v/") || key.starts_with(b"s/") {
+                        return Err(Error::Corrupt("Journal original event required"));
+                    }
                     let length = reader.u32()?;
                     if length > MAX_DATA {
                         return Err(Error::Corrupt("Journal inline value bound"));
@@ -71,6 +75,7 @@ impl Batch {
                         Some(Cell {
                             cursor,
                             range: Some((start, length)),
+                            original_proof: None,
                         }),
                     ));
                 }
@@ -118,6 +123,7 @@ impl Batch {
                 Some(Cell {
                     cursor,
                     range: None,
+                    original_proof: Some(*blake3::hash(&original.intent.to_bytes()).as_bytes()),
                 }),
             ));
             self.original_cursors.push(cursor);

@@ -80,6 +80,12 @@ engine event. Existing KV session files retain their meaning. Explicit
 `migrate-session --session ID` retains a verified recovery database before
 conversion, preserving originals and retry mappings.
 
+[Event session search](docs/SESSION_SEARCH.md) uses a persistent encrypted lexical
+index and returns exact original context. Healthy-owner queries reuse the index;
+new indexed originals extend it. First builds and source reopens take longer.
+Cross-session search currently visits recent sessions and ranks within each
+session. Legacy KV files retain substring search until explicit conversion.
+
 ## Build and check
 
 Use stable Rust supporting edition 2024, a C compiler and Node.js 24 or newer.
