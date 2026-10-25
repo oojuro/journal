@@ -43,8 +43,8 @@ bytes are refused. Begin is at most 16 MiB; the sum of original bytes is at most
 the same application values used by the compatibility KV implementation.
 
 Original events follow in Begin's tag-2 order. The reader checks length and
-digest, then uses the engine's `get_prepared` to verify the actual retained
-cursor, acceptance time and exact data. Original text that resembles a control
+digest, then uses the engine's `AppendIntent::check_event` on the observed
+receipt and data to verify the retained cursor, acceptance time and exact data. Original text that resembles a control
 marker is still interpreted as an original in that declared position.
 
 Commit is exactly the eight bytes `OJJCOM1\0`, the same 16-byte application
