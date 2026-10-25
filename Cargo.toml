@@ -9,12 +9,12 @@ license = "Apache-2.0"
 repository = "https://github.com/oojuro/o-journal"
 
 [workspace.dependencies]
-ojo = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906", features = ["archive"] }
-oojuro-core = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906" }
-oojuro-engine = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906" }
-oojuro-nine = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906" }
-oojuro-store = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906" }
-oojuro-trace = { git = "https://github.com/oojuro/oojuro.git", rev = "9abee38be0acab284bf68aed75f899e9fdbf0906" }
+ojo = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a", features = ["archive"] }
+oojuro-core = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a" }
+oojuro-engine = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a" }
+oojuro-nine = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a" }
+oojuro-store = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a" }
+oojuro-trace = { git = "https://github.com/oojuro/oojuro.git", rev = "2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = { version = "1", default-features = false, features = ["std", "pure"] }
