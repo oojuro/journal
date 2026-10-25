@@ -30,8 +30,8 @@ impl Events {
             return Ok(());
         }
         if changes.iter().any(|change| {
-            change.key != b"manifest"
-                && (change.value.is_none() || self.values.contains_key(change.key))
+            change.value.is_none()
+                || change.key != b"manifest" && self.values.contains_key(change.key)
         }) {
             return Err(Error::Conflict);
         }

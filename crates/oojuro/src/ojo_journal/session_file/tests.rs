@@ -321,6 +321,92 @@ fn full_latest_legacy_layout_is_checked_before_any_tail_recovery() {
 }
 
 #[test]
+fn immutable_index_source_refuses_complete_mutations_before_tail_recovery() {
+    for key in [None, Some([66; 32])] {
+        for damage in [
+            "original_replacement",
+            "metadata_replacement",
+            "record_deletion",
+            "manifest_deletion",
+        ] {
+            let scratch = Scratch::new();
+            let path = scratch.0.join("immutable.juro");
+            let values = legacy_values(b"exact original");
+            let changes = values
+                .iter()
+                .map(|(key, value)| Change {
+                    key,
+                    value: Some(value),
+                })
+                .collect::<Vec<_>>();
+            let mut file = SessionFile::create(&path, key.as_ref()).unwrap();
+            file.commit([12; 16], &changes).unwrap();
+            drop(file);
+
+            // A generic engine writer can store these exact bytes. Journal must
+            // refuse the invalid application transition during observed replay,
+            // before trusting an unchanged indexed prefix or truncating a tail.
+            let mut journal = Journal::open(&path, key.as_ref(), true).unwrap();
+            let mut changed = values[2].1.clone();
+            if damage == "metadata_replacement" {
+                let mut record: serde_json::Value = serde_json::from_slice(&changed).unwrap();
+                record["input"]["valid_at"] = serde_json::json!(99);
+                changed = serde_json::to_vec(&record).unwrap();
+            }
+            let changes = [match damage {
+                "original_replacement" => Change {
+                    key: VALUE,
+                    value: Some(b"changed original"),
+                },
+                "metadata_replacement" => Change {
+                    key: &values[2].0,
+                    value: Some(&changed),
+                },
+                "record_deletion" => Change {
+                    key: &values[2].0,
+                    value: None,
+                },
+                "manifest_deletion" => Change {
+                    key: b"manifest",
+                    value: None,
+                },
+                _ => unreachable!(),
+            }];
+            let intents = if damage == "original_replacement" {
+                vec![journal.prepare(b"changed original").unwrap()]
+            } else {
+                Vec::new()
+            };
+            let (begin, _) = super::grammar::encode([13; 16], &changes, &intents).unwrap();
+            journal.append(&begin).unwrap();
+            if let Some(intent) = intents.first() {
+                journal
+                    .append_prepared(intent, b"changed original")
+                    .unwrap();
+            }
+            journal
+                .append(&super::grammar::commit([13; 16], &begin))
+                .unwrap();
+            drop(journal);
+            fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(b"preserve this incomplete physical tail")
+                .unwrap();
+            let before = fs::read(&path).unwrap();
+            for writable in [false, true] {
+                assert!(
+                    SessionFile::open(&path, key.as_ref(), writable).is_err(),
+                    "{damage}"
+                );
+                assert_eq!(fs::read(&path).unwrap(), before, "{damage}");
+            }
+        }
+    }
+}
+
+#[test]
 fn only_explicit_initialization_adopts_empty_interrupted_files() {
     for key in [None, Some([65; 32])] {
         for event_profile in [false, true] {

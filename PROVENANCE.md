@@ -124,3 +124,18 @@ originals and retry bindings, verifies the manifest and all live values, then
 confirms canonical replacement. Conversion does not silently rename `.ojo` paths
 or change earlier qualification artifacts. It gives old KV originals new engine
 acceptance times while preserving their application timestamps.
+
+## Indexed Event session retrieval
+
+The persistent search followup advances all seven selected engine packages to
+`2d8dfe73a435afda5bc64904664037a23ee4ed7d`, including standalone `ojo` 0.2.0,
+bounded query fingerprints and qualified generic disk-index improvements. No
+registry dependency is added or upgraded by this pin. Wire 0.1 and the Event
+profile remain separately versioned; earlier source evidence retains its scope.
+
+Journal now supplies exact retained Event originals to the engine's disk
+projection and extends it only after verifying an unchanged immutable indexed
+prefix. Disposable derived files are encrypted, separately leased and scoped to
+one session. Application session filtering, indexing eligibility and context
+expansion remain in Journal. The [search contract](docs/SESSION_SEARCH.md) records
+first-build, reopen, memory-admission and cross-session limits explicitly.

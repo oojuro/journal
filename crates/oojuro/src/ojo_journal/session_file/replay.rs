@@ -55,7 +55,7 @@ pub(super) fn apply(
         .next_back()
         .map(|(key, _)| key.clone());
     for (key, value) in &batch.changes {
-        if key != b"manifest" && (value.is_none() || values.contains_key(key)) {
+        if value.is_none() || key != b"manifest" && values.contains_key(key) {
             return Err(Error::Corrupt("immutable Journal application value"));
         }
         if key.starts_with(b"v/") {
