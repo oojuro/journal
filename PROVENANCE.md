@@ -57,3 +57,21 @@ routing, transcript parsing, secret redaction, optional delivery and archiving.
 Historical adoption reports above keep their exact original source scopes. New
 application and installed-client qualification is recorded separately; a local
 pass does not establish million-record Cloud latency or a production deployment.
+
+## Replayed-prefix confirmation
+
+The current coherent engine pin is
+`a49fd108f5acc0b8658a84631c103d3e2e6f7be0`, including the separately versioned
+Event profile foundation and the durable replay/duplicate confirmation fix.
+All seven selected engine packages share that immutable source; registry versions
+remain unchanged. Journal's existing session files still use wire 0.1 KV data and
+do not silently become Event-profile files. Explicit migration remains required.
+
+Application acknowledgements reconstructed from existing batch fingerprints now
+confirm the verified prefix before success. Writable opens confirm both that
+prefix and the containing directory before reconstructed metadata or upload
+staging. Healthy owner handles retain their successful barrier; repeated known
+operations need no additional file sync. The Linux fault regression forces a
+completed append's fsync to fail, then refuses a reopened duplicate ACK while
+sync still fails. Exact retry succeeds with zero new records after confirmation,
+with original file bytes and raw/encrypted originals unchanged.
