@@ -60,9 +60,11 @@ def verify(out):
         require(path.resolve().is_relative_to(out.resolve()) and not path.is_symlink(), "unsafe package path")
         require(path.stat().st_size > 0 and sha(path) == expected, "package changed: " + name)
     require({"LICENSE", "NOTICE", "Cargo.lock", "bin/oojuro", "bin/oojurod"} <= manifest["files"].keys(), "missing required package files")
+    if manifest.get("product") == "ojo-journal":
+        require({"bin/ojo-journal", "bin/oojuro-native"} <= manifest["files"].keys(), "missing Journal binaries")
 
 
-def package(binary_dir, out, target):
+def package(binary_dir, out, target, journal=False):
     require(not out.exists(), "output must be new")
     require(not run("git", "status", "--porcelain"), "commit reviewed inputs before packaging")
     metadata = json.loads(run("cargo", "metadata", "--locked", "--offline", "--format-version", "1", "--filter-platform", target))
@@ -106,7 +108,7 @@ def package(binary_dir, out, target):
                 require(f.resolve().is_relative_to(dest.resolve()), "unsafe registry path")
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_bytes(data)
-        allowed = {"0BSD", "MIT", "MIT-0", "Apache-2.0", "LLVM-exception", "CC0-1.0", "BSD-3-Clause", "ISC", "Unlicense", "Zlib", "Unicode-3.0", "CDLA-Permissive-2.0", "OR", "AND", "WITH"}
+        allowed = {"0BSD", "MIT", "MIT-0", "Apache-2.0", "LLVM-exception", "CC0-1.0", "BSD-3-Clause", "BSL-1.0", "ISC", "Unlicense", "Zlib", "Unicode-3.0", "CDLA-Permissive-2.0", "OR", "AND", "WITH"}
         require(p["license"] and set(re.findall(r"[\w.-]+", p["license"])) <= allowed, "unreviewed license: " + p["name"])
         dependencies.append({"name": p["name"], "version": p["version"], "license": p["license"], "repository": p["repository"], "registryChecksum": checksum})
     require(dependencies, "empty registry dependency inventory")
@@ -122,12 +124,14 @@ def package(binary_dir, out, target):
         put(f, out / "licenses/rust" / f.name)
     binaries = {}
     dictionary = (store_directory / "dict/starter-v1.zdict").read_bytes()
-    for name in ["oojuro", "oojurod"]:
+    for name in (["ojo-journal", "oojuro", "oojuro-native", "oojurod"] if journal else ["oojuro", "oojurod"]):
         src = binary_dir / name
         put(src, out / "bin" / name)
         (out / "bin" / name).chmod(0o755)
         binaries[name] = {"sha256": sha(src), "dictionaryIncluded": dictionary in src.read_bytes()}
     manifest = {
+        "product": "ojo-journal" if journal else "oojuro-compatibility",
+        "version": tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"] if journal else "0.1.0",
         "sourceCommit": run("git", "rev-parse", "HEAD"), "target": target,
         "rustc": run("rustc", "-vV"), "cargo": run("cargo", "--version"),
         "lockSha256": sha(ROOT / "Cargo.lock"), "binaries": binaries,
@@ -144,5 +148,6 @@ if __name__ == "__main__":
     parser.add_argument("binary_directory", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--target", default="x86_64-unknown-linux-gnu")
+    parser.add_argument("--journal", action="store_true", help="include the .ojo application and compatibility executables")
     args = parser.parse_args()
-    package(args.binary_directory.resolve(), args.output.resolve(), args.target)
+    package(args.binary_directory.resolve(), args.output.resolve(), args.target, args.journal)

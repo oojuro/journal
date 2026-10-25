@@ -27,6 +27,8 @@ pub mod exclude;
 pub mod hook;
 pub mod hosted;
 pub mod hosted_capture;
+#[cfg(target_os = "linux")]
+pub mod ojo_journal;
 pub mod hosted_mcp;
 pub mod journal;
 pub mod mcp;
