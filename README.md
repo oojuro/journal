@@ -62,6 +62,15 @@ Explicit migration preserves existing directory stores and creates a complete
 encrypted recovery snapshot before converting their records. Compatibility
 commands keep their original formats; no store is silently upgraded.
 
+Oojuro is a general embedded database. Its generic event contract is an engine
+acceptance timestamp plus exact opaque data; agent, session, provider and tool
+fields belong to Journal's application data. Engine full-text indexes and query
+execution provide generic retrieval; Journal chooses capture, session filters,
+context expansion and access policy. This alpha's session files use the existing
+wire 0.1 key/value API. They do not already implement the additive generic Event
+profile; adopting that profile requires an explicit, verified application
+migration with exact originals and retry mappings preserved.
+
 ## Build and check
 
 Use stable Rust supporting edition 2024, a C compiler and Node.js 24 or newer.

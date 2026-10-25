@@ -108,7 +108,7 @@ def package(binary_dir, out, target, journal=False):
                 require(f.resolve().is_relative_to(dest.resolve()), "unsafe registry path")
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_bytes(data)
-        allowed = {"0BSD", "MIT", "MIT-0", "Apache-2.0", "LLVM-exception", "CC0-1.0", "BSD-3-Clause", "ISC", "Unlicense", "Zlib", "Unicode-3.0", "CDLA-Permissive-2.0", "OR", "AND", "WITH"}
+        allowed = {"0BSD", "MIT", "MIT-0", "Apache-2.0", "LLVM-exception", "CC0-1.0", "BSD-3-Clause", "BSL-1.0", "ISC", "Unlicense", "Zlib", "Unicode-3.0", "CDLA-Permissive-2.0", "OR", "AND", "WITH"}
         require(p["license"] and set(re.findall(r"[\w.-]+", p["license"])) <= allowed, "unreviewed license: " + p["name"])
         dependencies.append({"name": p["name"], "version": p["version"], "license": p["license"], "repository": p["repository"], "registryChecksum": checksum})
     require(dependencies, "empty registry dependency inventory")

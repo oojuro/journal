@@ -138,3 +138,19 @@ redaction, both lost Cloud ACKs, byte-exact migration/restore, MCP errors and
 installer checksum/path/link refusal. Full source qualification, published
 artifact installation, live setup, capacity and Cloud launch acceptance remain
 distinct evidence. No universal engine superiority or stable-format claim is made.
+
+## Generic engine event profile compatibility
+
+This alpha stores immutable accepted originals and application metadata in the
+existing wire 0.1 key/value API. Session/provider/tool metadata, source timestamps,
+redaction, routing and context policy belong to Journal. They are not mandatory
+core event fields. The general engine Event contract is an engine acceptance
+timestamp plus exact opaque data, with generic get, time range, full-text search
+and follow operations. An engine acceptance timestamp must not be replaced by a
+provider's claimed timestamp; the latter remains application data.
+
+A future application migration must copy and verify every original byte, preserve
+application event IDs, source session mapping and unknown-ACK retry intents, and
+retain a recovery artifact before switching formats. Existing alpha key/value
+files are not implicitly Event-profile files. Their supported readers and frozen
+wire 0.1 contract continue to apply independently of engine release versions.
