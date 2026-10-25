@@ -31,21 +31,44 @@ before acceptance. Original text and derived metadata commit atomically; a curso
 can advance only afterward. Replaying a lost cursor deduplicates stable event IDs.
 Changed input under an existing event/request ID conflicts.
 
-Connect starts a systemd user service unless `--no-service` is supplied. Its
-synthetic setup fixture lives in the application's own private directory. It is
-parsed and stored through the same pipeline, remains unindexed, and can be read
-back by the returned session/sequence. It proves parser/local durability, not
-that every future provider entry is supported. `watch --adapter codex` runs the
-capture loop in the foreground. It also runs the archive scheduler and, when a
-cloud connection exists, a separate uploader.
+Connect starts one root-scoped systemd user service unless `--no-service` is
+supplied. It monitors both configured adapters. Its synthetic setup fixture lives
+in the application's own private directory, goes through the real parser and
+cursor, remains unindexed, and can be read by the returned session/sequence.
+Setup retries only a short cooperating capture tick's busy response, with a
+bounded deadline. Source conflicts and uncertain effects retain their errors.
+
+Connect registers a read-only local MCP server through the selected agent CLI,
+checks the installed inventory, then opens the exact accepted setup original
+through that launch command. Existing matching entries resume; conflicting
+entries remain unchanged. `--no-mcp` opts out. `--no-service` also leaves agent
+configuration alone unless `--register-mcp` is explicit. The result distinguishes
+verified MCP protocol/original reads from a future agent model tool invocation;
+restart or reconnect the agent to load new tools. It does not claim every future
+provider entry or an actual agent-model invocation was verified. Codex setup uses
+its [documented stdio registration command](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
+`serve` runs the healthy owner in the foreground; `watch --adapter codex` remains
+a compatible entrypoint. The owner also runs the archive scheduler and optional
+uploader. `upgrade-service` replaces only the managed executable and root-bound
+unit, restarts it, and requires a live owner handshake. Exact old alpha units for
+that same root can migrate; unrelated units and agent entries stay untouched.
 
 The current search path streams original values using case-insensitive AND
 substrings and returns recent matches with their complete originals. It has
 bounded result memory but scans history. It does not claim a persistent inverted
 index or million-record latency. Timeline and upload pages use bounded engine
-prefix traversal and share verified encoded bodies within each page. Standalone
-commands still pay full verified reopen; a healthy long-lived owner/query path
-and the generic disk projection are being qualified separately.
+prefix traversal and share verified encoded bodies within each page. With the
+owner running, capture, CLI, read-only MCP and sync staging reuse a pool of at
+most eight healthy engine handles. The private mode0700 socket parent, mode0600
+socket, peer UID, root binding, message/worker bounds and deadlines protect local
+routing. Database mutations serialize; slow clients and network requests hold no
+database mutex. A failed database operation drops its handle before verified
+reopen. Status reports actual handles and verified opens. These are count bounds,
+not a process-RSS claim. Without a live owner, standalone commands use verified
+file reopen. Stale-socket fallback requires a failed live handshake and a free
+owner lock; a lock or PID file alone is not a liveness test. The generic disk
+full-text projection remains separate work, so substring search is still linear.
 
 ## Optional cloud delivery
 

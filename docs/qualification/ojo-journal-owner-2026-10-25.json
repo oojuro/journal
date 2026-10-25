@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "runtime_commit": "1cfc8f79cc8a3911be80c71c63d67cd4e1d4fbf0",
+  "base_main": "b7f306b4357350973ce1ac2edbc1ede699064ce1",
+  "engine_commit": "915b2db9b94a6dde294ecec27fc0e5de6ba16f08",
+  "synthetic_only": true,
+  "checks": [
+    {"command": "TMPDIR=/tmp cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p oojuro-proxy -p oojuro -- --test-threads=1", "passed": 230, "failed": 0, "ignored": 1, "suites": 25},
+    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0},
+    {"command": "python3 scripts/test-journal-service.py --binary /qualified/debug/ojo-journal", "exit": 0, "real_owner_process": true, "systemd_and_agent_boundaries": "owned command fixtures"},
+    {"command": "python3 scripts/test-install-journal.py", "passed": 6, "failed": 0}
+  ],
+  "observed": [
+    "Healthy owner holds the actual engine file lock; repeated reads preserve verified-open count.",
+    "Capture, CLI, read-only MCP and sync staging use the same bounded handle pool.",
+    "Automatic supported transcript capture records exact accepted originals.",
+    "Lost local write response and both lost Cloud acknowledgements preserve original retry identities.",
+    "Duplicate-only new batch acknowledgement stays bound across reopen and archive without changing lifecycle metadata.",
+    "SIGKILL leaves a stale endpoint; failed handshake plus free owner lock permits verified fallback and restart.",
+    "Conflicting responsive endpoint and full backlog never cause direct fallback or stale unlink.",
+    "Both supported agent registration fixtures preserve matching and unrelated entries and refuse conflicts.",
+    "Managed connect/reconnect/upgrade verifies a live owner and exact MCP original while preserving keys/configuration/agent entries."
+  ],
+  "limits": [
+    "Eight handles, four socket workers and message bounds are counts, not process RSS qualification.",
+    "Linear substring search remains; generic Event migration and disk full-text projection follow a separately qualified engine pin.",
+    "Real installed agent model tool calls, real systemd user installation, public artifacts/Homebrew and live Cloud activation remain separate operator checks.",
+    "No performance or stable-format claim; no release published by these checks."
+  ]
+}

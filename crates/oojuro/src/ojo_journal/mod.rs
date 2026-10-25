@@ -6,6 +6,8 @@
 mod capture;
 pub mod cli;
 mod migrate;
+mod owner;
+mod setup;
 mod store;
 mod sync;
 

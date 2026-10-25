@@ -20,7 +20,12 @@ target/debug/ojo-journal search --query "deployment decision"
 Connect installs a per-user Linux service, excludes existing transcript history
 by default, and verifies an owned synthetic transcript through the actual parser
 and durable `.ojo` path. It never adds a test line to your agent's transcript.
-Use `--no-service` and `ojo-journal watch --adapter codex` for a foreground process.
+The service keeps healthy session handles and supplies capture, CLI and local MCP
+reads through a private Unix socket. Connect registers the selected agent's
+read-only MCP server and verifies its synthetic original; restart the agent to
+load newly registered tools. Use `--no-mcp` to skip registration. Use `--no-service`
+and `ojo-journal serve` for a foreground owner (`watch --adapter codex` remains
+an alias). `upgrade-service` updates the managed copy after installing a new CLI.
 Capture redacts recognized secrets and never reads referenced tool-result files.
 New provider sessions get separate journals; resuming a session keeps its journal.
 

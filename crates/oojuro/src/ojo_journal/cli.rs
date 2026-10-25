@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-const HELP: &str = "ojo-journal — local .ojo agent journals and optional scoped cloud sync\n\nCommands: init, connect, capture, watch, sessions, search, timeline, get, context, record, export, import, migrate, restore-migration, finish, resume, archive, archive-idle, archive-policy, cloud-connect, sync, status, mcp\n\nGlobal: --root ABSOLUTE_DIRECTORY (default ~/.local/state/ojo-journal)\nconnect --adapter codex|claude-code [--source-root DIR] [--label NAME] --accept-local-capture [--include-existing] [--api-key-file PRIVATE_FILE] [--no-service]\nrecord --session-id STABLE_ID --event-id STABLE_ID [--text-file FILE] [--kind explicit|input|output|tool_call|tool_result|system]\nsearch --query TEXT [--session ID] [--limit 10]\ntimeline --session ID [--from 0] [--limit 100]\nget/context --session ID --id SEQUENCE\nexport --session ID (JSONL on stdout); import --file JSONL\nfinish/resume/archive --session ID; archive-policy --enabled true|false\ncloud-connect --api-key-file PRIVATE_FILE [--base-url https://oojuro.com]\nsync [--max-batches 1000]; local recording needs no cloud account.\n";
+const HELP: &str = "ojo-journal — local .ojo agent journals and optional scoped cloud sync\n\nCommands: serve, upgrade-service, init, connect, capture, watch, sessions, search, timeline, get, context, record, export, import, migrate, restore-migration, finish, resume, archive, archive-idle, archive-policy, cloud-connect, sync, status, mcp\n\nGlobal: --root ABSOLUTE_DIRECTORY (default ~/.local/state/ojo-journal)\nconnect --adapter codex|claude-code [--source-root DIR] [--label NAME] --accept-local-capture [--include-existing] [--api-key-file PRIVATE_FILE] [--no-service] [--no-mcp|--register-mcp]\nrecord --session-id STABLE_ID --event-id STABLE_ID [--text-file FILE] [--kind explicit|input|output|tool_call|tool_result|system]\nsearch --query TEXT [--session ID] [--limit 10]\ntimeline --session ID [--from 0] [--limit 100]\nget/context --session ID --id SEQUENCE\nexport --session ID (JSONL on stdout); import --file JSONL\nfinish/resume/archive --session ID; archive-policy --enabled true|false\ncloud-connect --api-key-file PRIVATE_FILE [--base-url https://oojuro.com]\nsync [--max-batches 1000]; local recording needs no cloud account.\n";
 struct Args {
     command: String,
     values: BTreeMap<String, String>,
@@ -41,6 +41,8 @@ impl Args {
                 "--once",
                 "--sync-cloud",
                 "--allow-raw-source",
+                "--no-mcp",
+                "--register-mcp",
             ]
             .contains(&flag.as_str())
             {
@@ -134,6 +136,10 @@ pub fn run() -> Result<()> {
         Some(path) => absolute(path)?,
         None => default_root()?,
     };
+    if args.command == "serve" {
+        args.only(&[], &["--sync-cloud"])?;
+        return super::owner::serve(&path, args.flags.contains("--sync-cloud"));
+    }
     if args.command == "init" {
         args.only(&[], &["--plaintext"])?;
         let root = JournalRoot::init(&path, !args.flags.contains("--plaintext"))?;
@@ -154,6 +160,8 @@ pub fn run() -> Result<()> {
                 "--accept-local-capture",
                 "--include-existing",
                 "--no-service",
+                "--no-mcp",
+                "--register-mcp",
             ],
         )?;
         if !args.flags.contains("--accept-local-capture") {
@@ -177,13 +185,15 @@ pub fn run() -> Result<()> {
                     ".claude/projects"
                 })
             });
-        let report = connect_local(
-            &root,
-            &source,
-            adapter,
-            args.val("--label").unwrap_or(adapter),
-            args.flags.contains("--include-existing"),
-        )?;
+        let report = super::capture::setup_retry(|| {
+            connect_local(
+                &root,
+                &source,
+                adapter,
+                args.val("--label").unwrap_or(adapter),
+                args.flags.contains("--include-existing"),
+            )
+        })?;
         if let Some(file) = args.val("--api-key-file") {
             hosted_capture::ensure_journal_connection(
                 &path.join("cloud.json"),
@@ -201,7 +211,9 @@ pub fn run() -> Result<()> {
         } else {
             None
         };
-        let verification = super::capture::verify_pipeline(&root, adapter, cloud_scope.as_deref())?;
+        let mut verification = super::capture::setup_retry(|| {
+            super::capture::verify_pipeline(&root, adapter, cloud_scope.as_deref())
+        })?;
         let cloud_result = if cloud_scope.is_some() {
             sync_cloud(&root, &path.join("cloud.json"), 8).map(|_| ())
         } else {
@@ -210,10 +222,36 @@ pub fn run() -> Result<()> {
         let service = if args.flags.contains("--no-service") {
             false
         } else {
-            install_service(&root, adapter)?;
+            install_service(&root, adapter, false)?;
+            // A running systemd unit alone does not establish that capture owns
+            // a healthy database. Probe the owner and re-read the accepted parser fixture.
+            let owner_root = JournalRoot::open(&path)?;
+            verification = super::capture::setup_retry(|| {
+                super::capture::verify_pipeline(&owner_root, adapter, cloud_scope.as_deref())
+            })?;
             true
         };
         cloud_result?;
+        if args.flags.contains("--no-mcp") && args.flags.contains("--register-mcp") {
+            return Err("conflicting_mcp_options");
+        }
+        let mcp = if args.flags.contains("--register-mcp")
+            || (service && !args.flags.contains("--no-mcp"))
+        {
+            let binary = if service {
+                root.path.join("bin/ojo-journal")
+            } else {
+                std::env::current_exe().map_err(|_| "current_binary_unavailable")?
+            };
+            Some(super::setup::register(
+                &JournalRoot::open(&path)?,
+                adapter,
+                &binary,
+                &verification,
+            )?)
+        } else {
+            None
+        };
         let cloud_confirmed = cloud_scope
             .as_ref()
             .map(|scope| {
@@ -225,11 +263,16 @@ pub fn run() -> Result<()> {
             return Err("setup_cloud_delivery_unconfirmed; local capture remains configured");
         }
         return emit(
-            &json!({"connected":true,"storage":"ojo","capture":report,"verification":verification,"cloud_confirmed":cloud_confirmed,"service_started":service,"existing_history_selected":args.flags.contains("--include-existing"),"next":"New complete transcript lines are captured into one .ojo per provider session; use status to inspect durable records and sync confirmations."}),
+            &json!({"connected":true,"storage":"ojo","capture":report,"verification":verification,"cloud_confirmed":cloud_confirmed,"service_started":service,"mcp":mcp,"existing_history_selected":args.flags.contains("--include-existing"),"next":"New complete transcript lines are captured into one .ojo per provider session; use status to inspect durable records and sync confirmations."}),
         );
     }
     let mut root = JournalRoot::open(&path)?;
     match args.command.as_str() {
+        "upgrade-service" => {
+            args.only(&["--adapter"], &[])?;
+            install_service(&root, args.val("--adapter").unwrap_or("codex"), true)?;
+            emit(&json!({"service_upgraded":true,"owner_verified":true}))
+        }
         "capture" => {
             args.only(&["--adapter"], &["--once"])?;
             emit(&capture_once(&root, args.req("--adapter")?)?)
@@ -245,7 +288,7 @@ pub fn run() -> Result<()> {
         "sessions" | "status" => {
             args.only(&[], &[])?;
             emit(
-                &json!({"storage":"ojo","encrypted":root.encrypted(),"sessions":root.sessions()?,"cloud":super::sync::status(&root)?}),
+                &json!({"storage":"ojo","encrypted":root.encrypted(),"sessions":root.sessions()?,"cloud":super::sync::status(&root)?,"owner":root.owner_status()?}),
             )
         }
         "timeline" => {
@@ -534,7 +577,7 @@ fn unit_quote(s: &str) -> Result<String> {
             .replace('%', "%%")
     ))
 }
-fn install_service(root: &JournalRoot, adapter: &str) -> Result<()> {
+fn install_service(root: &JournalRoot, adapter: &str, upgrade: bool) -> Result<()> {
     oojuro_capture::Format::from_name(adapter).ok_or("unsupported_adapter")?;
     let binary = std::env::current_exe().map_err(|_| "current_binary_unavailable")?;
     let bin = root.path.join("bin");
@@ -559,9 +602,27 @@ fn install_service(root: &JournalRoot, adapter: &str) -> Result<()> {
         if !info.is_file()
             || info.uid() != unsafe { libc::geteuid() }
             || info.mode() & 0o777 != 0o700
-            || fs::read(&installed).map_err(|_| "service_binary_unavailable")? != bytes
         {
-            return Err("existing_service_binary_requires_explicit_upgrade");
+            return Err("private_service_binary_required");
+        }
+        if fs::read(&installed).map_err(|_| "service_binary_unavailable")? != bytes {
+            if !upgrade {
+                return Err(
+                    "existing_service_binary_requires_explicit_upgrade; use ojo-journal upgrade-service",
+                );
+            }
+            let temporary = bin.join(format!(".upgrade-{}", hosted_capture::random_id()?));
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .mode(0o700)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(&temporary)
+                .map_err(|_| "service_binary_install_failed")?;
+            file.write_all(&bytes)
+                .and_then(|_| file.sync_all())
+                .map_err(|_| "service_binary_install_failed")?;
+            fs::rename(&temporary, &installed).map_err(|_| "service_upgrade_outcome_unknown")?;
         }
     }
     File::open(&bin)
@@ -570,24 +631,67 @@ fn install_service(root: &JournalRoot, adapter: &str) -> Result<()> {
     let home = PathBuf::from(std::env::var_os("HOME").ok_or("home_directory_unavailable")?);
     let units = home.join(".config/systemd/user");
     fs::create_dir_all(&units).map_err(|_| "service_directory_unavailable")?;
-    let unit_name = format!("ojo-journal-{adapter}.service");
+    let unit_name = format!("ojo-journal-{}.service", &root.identity()[..16]);
     let unit = units.join(&unit_name);
     let body = format!(
-        "# Managed by ojo-journal\n[Unit]\nDescription=ojo-journal {adapter} local capture\n[Service]\nExecStart={} watch --root {} --adapter {} --sync-cloud\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n",
+        "# Managed by ojo-journal root {}\n[Unit]\nDescription=ojo-journal local session owner\n[Service]\nExecStart={} serve --root {} --sync-cloud\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n",
+        root.identity(),
         unit_quote(installed.to_str().ok_or("invalid_service_path")?)?,
-        unit_quote(root.path.to_str().ok_or("invalid_service_path")?)?,
-        adapter
+        unit_quote(root.path.to_str().ok_or("invalid_service_path")?)?
     );
     if unit.exists() {
-        if fs::read(&unit).map_err(|_| "service_unit_unavailable")? != body.as_bytes() {
-            return Err("existing_service_unit_requires_explicit_upgrade");
+        let existing = read_private_unit(&unit)?;
+        if existing != body.as_bytes() {
+            if !upgrade
+                || !existing.starts_with(
+                    format!("# Managed by ojo-journal root {}\n", root.identity()).as_bytes(),
+                )
+            {
+                return Err("existing_service_unit_requires_explicit_upgrade");
+            }
+            let temporary = units.join(format!(".upgrade-{}", hosted_capture::random_id()?));
+            hosted_capture::create_private(&temporary, body.as_bytes())?;
+            fs::rename(&temporary, &unit).map_err(|_| "service_upgrade_outcome_unknown")?;
         }
     } else {
         hosted_capture::create_private(&unit, body.as_bytes())?;
     }
+    // Upgrade only the exact former unit for this private root. An unrelated
+    // service using the old per-adapter name is never stopped or rewritten.
+    for old_adapter in ["codex", "claude-code"] {
+        let old_name = format!("ojo-journal-{old_adapter}.service");
+        let old = units.join(&old_name);
+        if old.exists() {
+            let expected = format!(
+                "# Managed by ojo-journal\n[Unit]\nDescription=ojo-journal {old_adapter} local capture\n[Service]\nExecStart={} watch --root {} --adapter {old_adapter} --sync-cloud\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n",
+                unit_quote(installed.to_str().ok_or("invalid_service_path")?)?,
+                unit_quote(root.path.to_str().ok_or("invalid_service_path")?)?
+            );
+            if read_private_unit(&old)? == expected.as_bytes() {
+                if !upgrade {
+                    return Err(
+                        "existing_service_unit_requires_explicit_upgrade; use ojo-journal upgrade-service",
+                    );
+                }
+                if !std::process::Command::new("systemctl")
+                    .args(["--user", "disable", "--now", &old_name])
+                    .status()
+                    .map_err(|_| "systemd_user_service_unavailable")?
+                    .success()
+                {
+                    return Err("old_service_stop_unconfirmed");
+                }
+                fs::remove_file(&old).map_err(|_| "old_service_unit_unavailable")?;
+            }
+        }
+    }
+    File::open(&units)
+        .and_then(|file| file.sync_all())
+        .map_err(|_| "service_unit_sync_failed")?;
     for arguments in [
         vec!["--user", "daemon-reload"],
         vec!["--user", "enable", "--now", unit_name.as_str()],
+        vec!["--user", "restart", unit_name.as_str()],
     ] {
         if !std::process::Command::new("systemctl")
             .args(arguments)
@@ -598,53 +702,28 @@ fn install_service(root: &JournalRoot, adapter: &str) -> Result<()> {
             return Err("systemd_user_service_unavailable; use ojo-journal watch in foreground");
         }
     }
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match super::owner::available(root) {
+            Ok(true) => break,
+            _ if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50))
+            }
+            _ => {
+                return Err(
+                    "service_started_but_owner_unconfirmed; inspect the managed service log",
+                );
+            }
+        }
+    }
     Ok(())
+}
+fn read_private_unit(path: &Path) -> Result<Vec<u8>> {
+    crate::hosted::read_private(path, 16 << 10).map_err(|_| "private_service_unit_required")
 }
 fn watch(root: JournalRoot, adapter: &str, cloud: bool) -> Result<()> {
     oojuro_capture::Format::from_name(adapter).ok_or("unsupported_adapter")?;
-    if cloud {
-        let path = root.path.clone();
-        std::thread::spawn(move || {
-            loop {
-                if path.join("cloud.json").exists() {
-                    match JournalRoot::open(&path)
-                        .and_then(|r| sync_cloud(&r, &path.join("cloud.json"), 8))
-                    {
-                        Ok(report) => {
-                            if report.confirmed > 0 {
-                                let _ = emit(&json!({"cloud_confirmed":report}));
-                            }
-                        }
-                        Err(e) => eprintln!("ojo-journal: cloud_sync_pending: {e}"),
-                    }
-                }
-                std::thread::sleep(Duration::from_secs(5));
-            }
-        });
-    }
-    let mut next_archive = std::time::Instant::now();
-    loop {
-        match capture_once(&root, adapter) {
-            Ok(report) => {
-                if report.stored > 0 {
-                    emit(&report)?;
-                }
-            }
-            Err(error) => eprintln!("ojo-journal: capture_pending: {error}"),
-        }
-        if std::time::Instant::now() >= next_archive {
-            match JournalRoot::open(&root.path).and_then(|r| r.archive_idle(super::store::now())) {
-                Ok(n) => {
-                    if n > 0 {
-                        emit(&json!({"archived":n}))?;
-                    }
-                }
-                Err(error) => eprintln!("ojo-journal: archive_pending: {error}"),
-            }
-            next_archive = std::time::Instant::now() + Duration::from_secs(3600);
-        }
-        std::thread::sleep(Duration::from_secs(2));
-    }
+    super::owner::serve(&root.path, cloud)
 }
 fn mcp(root: &JournalRoot) -> Result<()> {
     let mut input = io::stdin().lock();
@@ -680,9 +759,9 @@ fn mcp(root: &JournalRoot) -> Result<()> {
                 ),
                 "ping" => Ok(json!({})),
                 "tools/list" => Ok(json!({"tools":[
-                    {"name":"sessions","description":"List local .ojo session journals","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-                    {"name":"search","description":"Search recorded originals in one local session","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"query":{"type":"string"}},"required":["session","query"],"additionalProperties":false}},
-                    {"name":"get","description":"Read the exact original and its session metadata","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"id":{"type":"integer","minimum":0}},"required":["session","id"],"additionalProperties":false}}
+                    {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"sessions","description":"List local .ojo session journals","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+                    {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"search","description":"Search recorded originals in one local session","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"query":{"type":"string"}},"required":["session","query"],"additionalProperties":false}},
+                    {"annotations":{"readOnlyHint":true,"destructiveHint":false},"name":"get","description":"Read the exact original and its session metadata","inputSchema":{"type":"object","properties":{"session":{"type":"string"},"id":{"type":"integer","minimum":0}},"required":["session","id"],"additionalProperties":false}}
                 ]})),
                 "tools/call" => {
                     let p = &request["params"];
