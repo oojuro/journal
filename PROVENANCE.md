@@ -1,5 +1,10 @@
 # Source provenance
 
+The current conditional-retirement dependency adoption resolves all seven
+selected engine packages to `2bb537b4f35b9e5902c1f135a6334c8a5d8c8e4a`, with the
+registry graph unchanged. Its [source scope and qualification](docs/ENGINE_CONDITIONAL_RETIREMENT_PIN.md)
+are separate from earlier immutable release and benchmark receipts below.
+
 The initial agent-journal source is extracted from the already public repository
 [oojuro/oojuro](https://github.com/oojuro/oojuro) at immutable commit
 `d1b24f7ed020365e09431aeaa8f4a7ff05e27dc3` (the source candidate in engine PR #92).
