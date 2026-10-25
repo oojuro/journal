@@ -4,10 +4,12 @@ use ojo::{Change, Database};
 use oojuro_engine::record::Input;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::{BTreeMap, VecDeque},
     fs::{self, File, OpenOptions},
     io::Write,
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 pub const MAX_TEXT: usize = 16 << 20;
@@ -53,17 +55,20 @@ pub struct Record {
     pub input: Input,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Page {
     pub records: Vec<Record>,
     pub next: Option<u64>,
     pub total: u64,
 }
 
+#[derive(Clone)]
 pub struct JournalRoot {
     pub(crate) path: PathBuf,
     cfg: RootConfig,
     key: Option<[u8; 32]>,
+    pool: Option<Arc<Mutex<Pool>>>,
+    remote: bool,
 }
 
 pub(crate) fn opaque(s: &str) -> bool {
@@ -187,6 +192,11 @@ impl JournalRoot {
         Self::open(path)
     }
     pub fn open(path: &Path) -> Result<Self> {
+        let mut root = Self::open_standalone(path)?;
+        root.remote = super::owner::available(&root)?;
+        Ok(root)
+    }
+    pub(crate) fn open_standalone(path: &Path) -> Result<Self> {
         private_dir(path)?;
         for part in ["journals", "locks"] {
             private_dir(&path.join(part))?;
@@ -210,9 +220,90 @@ impl JournalRoot {
             None
         };
         Ok(Self {
-            path: path.into(),
+            path: fs::canonicalize(path).map_err(|_| "journal_root_unavailable")?,
             cfg,
             key,
+            pool: None,
+            remote: false,
+        })
+    }
+    pub(crate) fn owned(mut self) -> Self {
+        self.pool = Some(Arc::new(Mutex::new(Pool::default())));
+        self
+    }
+    fn remote<T: serde::de::DeserializeOwned>(
+        &self,
+        action: super::owner::Action,
+    ) -> Result<Option<T>> {
+        if self.remote {
+            super::owner::call(self, action).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+    fn with_db<T>(&self, run: &str, action: impl FnOnce(&mut Database) -> Result<T>) -> Result<T> {
+        if let Some(pool) = &self.pool {
+            let mut pool = pool.lock().map_err(|_| "owner_unhealthy")?;
+            let mut writer = if let Some(i) = pool.writers.iter().position(|w| w.run == run) {
+                let writer = pool.writers.remove(i).unwrap();
+                if writer.stamp == self.stamp(run)? {
+                    writer
+                } else {
+                    drop(writer);
+                    pool.manifests.remove(run);
+                    pool.opens += 1;
+                    self.direct_writer(run)?
+                }
+            } else {
+                if pool.writers.len() >= 8 {
+                    pool.writers.pop_front();
+                }
+                pool.opens += 1;
+                self.direct_writer(run)?
+            };
+            let result = action(&mut writer.db);
+            // A failed database operation may have an unknown commit outcome. Never
+            // keep using that handle: verified reopen establishes its durable state.
+            if result.is_ok() {
+                let manifest = read_manifest(&mut writer.db)?;
+                let stamp = self.stamp(run)?;
+                writer.stamp = stamp.clone();
+                if pool.manifests.len() >= 10_000 && !pool.manifests.contains_key(run) {
+                    pool.manifests.pop_first();
+                }
+                pool.manifests.insert(run.into(), (stamp, manifest));
+                pool.writers.push_back(writer);
+            } else {
+                pool.manifests.remove(run);
+            }
+            result
+        } else {
+            let mut writer = self.direct_writer(run)?;
+            action(&mut writer.db)
+        }
+    }
+    pub(crate) fn owner_status(&self) -> Result<Option<serde_json::Value>> {
+        if self.remote {
+            return super::owner::call(self, super::owner::Action::Hello).map(Some);
+        }
+        self.pool.as_ref().map(|pool| {
+            let pool=pool.lock().map_err(|_|"owner_unhealthy")?;
+            Ok(serde_json::json!({"healthy":true,"root":self.identity(),"storage":"ojo","handle_capacity":8,"open_handles":pool.writers.len(),"verified_opens":pool.opens,"socket":super::owner::socket(self)?}))
+        }).transpose()
+    }
+    fn stamp(&self, run: &str) -> Result<Stamp> {
+        let m = fs::symlink_metadata(self.session_path(run)?).map_err(|_| "journal_not_found")?;
+        if !m.is_file() || m.uid() != unsafe { libc::geteuid() } || m.mode() & 0o777 != 0o600 {
+            return Err("private_journal_file_required");
+        }
+        Ok(Stamp {
+            dev: m.dev(),
+            ino: m.ino(),
+            size: m.len(),
+            modified: m.mtime(),
+            modified_ns: m.mtime_nsec(),
+            changed: m.ctime(),
+            changed_ns: m.ctime_nsec(),
         })
     }
     pub fn identity(&self) -> &str {
@@ -264,10 +355,35 @@ impl JournalRoot {
         adapter: &str,
         label: &str,
     ) -> Result<Manifest> {
+        if let Some(value) = self.remote(super::owner::Action::Ensure {
+            run: run.into(),
+            agent: agent.into(),
+            adapter: adapter.into(),
+            label: label.into(),
+        })? {
+            return Ok(value);
+        }
+        if self.pool.is_some() && self.session_path(run)?.exists() {
+            let m = self.manifest(run)?;
+            if m.agent_id != agent || m.adapter != adapter {
+                return Err("session_binding_conflict");
+            }
+            name(label)?;
+            return Ok(m);
+        }
         if !opaque(agent) || adapter.is_empty() || adapter.len() > 128 {
             return Err("invalid_session_identity");
         }
         name(label)?;
+        let pool_guard = self
+            .pool
+            .as_ref()
+            .map(|pool| pool.lock().map_err(|_| "owner_unhealthy"))
+            .transpose()?;
+        if pool_guard.is_some() && self.session_path(run)?.exists() {
+            drop(pool_guard);
+            return self.ensure_session(run, agent, adapter, label);
+        }
         let _lock = self.lock(run)?;
         let path = self.session_path(run)?;
         let mut db = if path.exists() {
@@ -309,23 +425,55 @@ impl JournalRoot {
     }
     /// Original text bytes and their derived metadata become durable in one transaction.
     /// Stable event IDs make source replay safe even if the application ACK is lost.
-    pub(crate) fn writer(&self, run: &str) -> Result<SessionWriter> {
+    fn direct_writer(&self, run: &str) -> Result<DirectWriter> {
         let guard = self.lock(run)?;
         let db = self.open_db(run, true)?;
-        Ok(SessionWriter {
+        Ok(DirectWriter {
             _guard: guard,
             db,
             run: run.into(),
+            stamp: self.stamp(run)?,
         })
     }
+    pub(crate) fn writer(&self, run: &str) -> Result<SessionWriter> {
+        self.session_path(run)?;
+        if self.pool.is_none() && !self.remote {
+            Ok(SessionWriter::Direct(Box::new(self.direct_writer(run)?)))
+        } else {
+            Ok(SessionWriter::Shared {
+                root: self.clone(),
+                run: run.into(),
+            })
+        }
+    }
     pub(crate) fn append(&self, run: &str, batch_request: &str, records: &[Record]) -> Result<u64> {
-        self.writer(run)?.append(batch_request, records)
+        if let Some(value) = self.remote(super::owner::Action::Append {
+            run: run.into(),
+            request: batch_request.into(),
+            records: records.to_vec(),
+        })? {
+            return Ok(value);
+        }
+        self.with_db(run, |db| append_to(db, run, batch_request, records))
     }
     pub fn manifest(&self, run: &str) -> Result<Manifest> {
-        let _lock = self.lock(run)?;
-        read_manifest(&mut self.open_db(run, false)?)
+        if let Some(value) = self.remote(super::owner::Action::Manifest { run: run.into() })? {
+            return Ok(value);
+        }
+        if let Some(pool) = &self.pool {
+            let pool = pool.lock().map_err(|_| "owner_unhealthy")?;
+            if let Some((stamp, manifest)) = pool.manifests.get(run)
+                && *stamp == self.stamp(run)?
+            {
+                return Ok(manifest.clone());
+            }
+        }
+        self.with_db(run, read_manifest)
     }
     pub fn sessions(&self) -> Result<Vec<Manifest>> {
+        if let Some(value) = self.remote(super::owner::Action::Sessions)? {
+            return Ok(value);
+        }
         let mut sessions = Vec::new();
         for entry in
             fs::read_dir(self.path.join("journals")).map_err(|_| "journal_directory_unavailable")?
@@ -336,6 +484,9 @@ impl JournalRoot {
                 continue;
             };
             if opaque(run) {
+                if sessions.len() >= 10_000 {
+                    return Err("journal_count_bound");
+                }
                 sessions.push(self.manifest(run)?);
             }
         }
@@ -347,199 +498,59 @@ impl JournalRoot {
         Ok(sessions)
     }
     pub fn get(&self, run: &str, sequence: u64) -> Result<Record> {
-        let _lock = self.lock(run)?;
-        let mut db = self.open_db(run, false)?;
-        let m = read_manifest(&mut db)?;
-        if sequence >= m.records {
-            return Err("record_not_found");
+        if let Some(value) = self.remote(super::owner::Action::Get {
+            run: run.into(),
+            sequence,
+        })? {
+            return Ok(value);
         }
-        read_record(&mut db, sequence)
+        self.with_db(run, |db| get_from(db, sequence))
     }
     pub fn page(&self, run: &str, start: u64, limit: usize) -> Result<Page> {
-        if limit == 0 || limit > 100 {
-            return Err("journal_page_bound");
+        if let Some(value) = self.remote(super::owner::Action::Page {
+            run: run.into(),
+            start,
+            limit,
+        })? {
+            return Ok(value);
         }
-        let _lock = self.lock(run)?;
-        let mut db = self.open_db(run, false)?;
-        let m = read_manifest(&mut db)?;
-        let end = m.records.min(start.saturating_add(limit as u64));
-        let mut records = Vec::new();
-        if start >= end {
-            return Ok(Page {
-                records,
-                next: None,
-                total: m.records,
-            });
-        }
-        let after = start.checked_sub(1).map(|i| key(b"m/", i));
-        db.scan_prefix(
-            b"m/",
-            after.as_deref(),
-            (end - start) as usize,
-            |k, value| {
-                if k.len() != 10
-                    || u64::from_be_bytes(k[2..].try_into().unwrap())
-                        != start + records.len() as u64
-                {
-                    return Err(ojo::Error::Corrupt("journal metadata sequence"));
-                }
-                let record: Record = serde_json::from_slice(value)
-                    .map_err(|_| ojo::Error::Corrupt("journal metadata"))?;
-                if record.sequence != start + records.len() as u64
-                    || !record.input.text.is_empty()
-                    || !opaque(&record.event_id)
-                    || !opaque(&record.run_id)
-                {
-                    return Err(ojo::Error::Corrupt("journal metadata"));
-                }
-                records.push(record);
-                Ok(())
-            },
-        )
-        .map_err(error)?;
-        if records.len() != (end - start) as usize {
-            return Err("invalid_journal_index");
-        }
-        let mut bytes = 0usize;
-        let mut position = 0;
-        while position < records.len() {
-            let prefix = if records[position].input.indexed {
-                b"v/"
-            } else {
-                b"s/"
-            };
-            let group_start = position;
-            let eligibility = records[position].input.indexed;
-            let mut group_end = position + 1;
-            while group_end < records.len() && records[group_end].input.indexed == eligibility {
-                group_end += 1;
-            }
-            let after = records[position]
-                .sequence
-                .checked_sub(1)
-                .map(|i| key(prefix, i));
-            let mut full = false;
-            let result = db.scan_prefix(
-                prefix,
-                after.as_deref(),
-                group_end - group_start,
-                |k, value| {
-                    if k.len() != 10
-                        || u64::from_be_bytes(k[2..].try_into().unwrap())
-                            != records[position].sequence
-                    {
-                        return Err(ojo::Error::Corrupt("journal original sequence"));
-                    }
-                    if bytes + value.len() > MAX_TEXT {
-                        full = true;
-                        return Err(ojo::Error::Invalid("journal page complete"));
-                    }
-                    records[position].input.text = String::from_utf8(value.to_vec())
-                        .map_err(|_| ojo::Error::Corrupt("journal original UTF-8"))?;
-                    bytes += value.len();
-                    position += 1;
-                    Ok(())
-                },
-            );
-            if full {
-                records.truncate(position);
-                break;
-            }
-            result.map_err(error)?;
-            if position != group_end {
-                return Err("original_not_found");
-            }
-        }
-        let next = start.saturating_add(records.len() as u64);
-        Ok(Page {
-            records,
-            next: (next < m.records).then_some(next),
-            total: m.records,
-        })
+        self.with_db(run, |db| page_from(db, start, limit))
     }
     pub fn search(&self, run: &str, query: &str, limit: usize) -> Result<Vec<Record>> {
-        if query.is_empty() || query.len() > 4096 || limit == 0 || limit > 100 {
-            return Err("journal_query_bound");
+        if let Some(value) = self.remote(super::owner::Action::Search {
+            run: run.into(),
+            query: query.into(),
+            limit,
+        })? {
+            return Ok(value);
         }
-        let _lock = self.lock(run)?;
-        let mut db = self.open_db(run, false)?;
-        let m = read_manifest(&mut db)?;
-        let terms = query
-            .split_whitespace()
-            .map(str::to_lowercase)
-            .collect::<Vec<_>>();
-        if terms.is_empty() || terms.len() > 32 {
-            return Err("journal_query_bound");
-        }
-        let mut matches = Vec::new();
-        let mut failure = None;
-        db.scan(|_, _, k, value| {
-            if failure.is_some() || !k.starts_with(b"v/") || k.len() != 10 {
-                return;
-            }
-            let index = u64::from_be_bytes(k[2..].try_into().unwrap());
-            if index >= m.records {
-                failure = Some("invalid_journal_index");
-                return;
-            }
-            let Some(value) = value else {
-                failure = Some("deleted_journal_original");
-                return;
-            };
-            let Ok(text) = std::str::from_utf8(value) else {
-                failure = Some("invalid_journal_utf8");
-                return;
-            };
-            let lower = text.to_lowercase();
-            if terms.iter().all(|term| lower.contains(term)) {
-                matches.push(index);
-                if matches.len() > limit {
-                    matches.remove(0);
-                }
-            }
-        })
-        .map_err(error)?;
-        if let Some(e) = failure {
-            return Err(e);
-        }
-        matches.reverse();
-        let mut records = Vec::new();
-        let mut bytes = 0usize;
-        for index in matches {
-            let record = read_record(&mut db, index)?;
-            bytes = bytes
-                .checked_add(record.input.text.len())
-                .ok_or("search_output_bound")?;
-            if bytes > MAX_TEXT {
-                break;
-            }
-            if !record.input.indexed {
-                return Err("journal_index_eligibility_mismatch");
-            }
-            records.push(record);
-        }
-        Ok(records)
+        self.with_db(run, |db| search_from(db, query, limit))
     }
     pub fn finish(&self, run: &str, finished: bool) -> Result<Manifest> {
-        let _lock = self.lock(run)?;
-        let mut db = self.open_db(run, true)?;
-        let mut m = read_manifest(&mut db)?;
-        m.finished_us = finished.then(now);
-        if !finished {
-            m.archived_us = None;
-            m.last_activity_us = now();
+        if let Some(value) = self.remote(super::owner::Action::Finish {
+            run: run.into(),
+            finished,
+        })? {
+            return Ok(value);
         }
-        db.commit(
-            ojo::request_id().map_err(error)?,
-            &[Change {
-                key: MANIFEST,
-                value: Some(&encoded_manifest(&m)?),
-            }],
-        )
-        .map_err(error)?;
-        Ok(m)
+        self.with_db(run, |db| finish_from(db, finished))
     }
     pub fn archive(&self, run: &str) -> Result<Manifest> {
+        if let Some(value) = self.remote(super::owner::Action::Archive { run: run.into() })? {
+            return Ok(value);
+        }
+        let mut pool = self
+            .pool
+            .as_ref()
+            .map(|p| p.lock().map_err(|_| "owner_unhealthy"))
+            .transpose()?;
+        if let Some(pool) = pool.as_mut() {
+            pool.writers.retain(|w| w.run != run);
+            pool.manifests.remove(run);
+        }
+        self.archive_direct(run)
+    }
+    fn archive_direct(&self, run: &str) -> Result<Manifest> {
         let _lock = self.lock(run)?;
         let mut db = self.open_db(run, false)?;
         let mut m = read_manifest(&mut db)?;
@@ -579,7 +590,18 @@ impl JournalRoot {
         checked
     }
     pub fn archive_idle(&self, time_us: i64) -> Result<usize> {
-        if !self.cfg.automatic_archive {
+        if let Some(value) = self.remote(super::owner::Action::ArchiveIdle { time_us })? {
+            return Ok(value);
+        }
+        let policy: RootConfig = serde_json::from_slice(
+            &read_private(&self.path.join("root.json"), 4096)
+                .map_err(|_| "private_journal_root_required")?,
+        )
+        .map_err(|_| "invalid_journal_root")?;
+        if policy.identity != self.cfg.identity || policy.format != FORMAT {
+            return Err("journal_root_binding_mismatch");
+        }
+        if !policy.automatic_archive {
             return Ok(0);
         }
         let mut count = 0;
@@ -596,6 +618,9 @@ impl JournalRoot {
         Ok(count)
     }
     pub fn set_automatic_archive(&mut self, enabled: bool) -> Result<()> {
+        if let Some(()) = self.remote(super::owner::Action::ArchivePolicy { enabled })? {
+            return Ok(());
+        }
         self.cfg.automatic_archive = enabled;
         let temporary = self
             .path
@@ -611,27 +636,56 @@ impl JournalRoot {
             .map_err(|_| "root_policy_outcome_unknown")
     }
     pub fn export(&self, run: &str, output: &mut impl Write) -> Result<u64> {
-        let _lock = self.lock(run)?;
-        let mut db = self.open_db(run, false)?;
-        let m = read_manifest(&mut db)?;
-        for sequence in 0..m.records {
-            let record = read_record(&mut db, sequence)?;
-            serde_json::to_writer(&mut *output, &record).map_err(|_| "journal_export_failed")?;
-            output
-                .write_all(b"\n")
-                .map_err(|_| "journal_export_failed")?;
+        let total = self.manifest(run)?.records;
+        let mut next = 0;
+        while next < total {
+            let page = self.page(run, next, (total - next).min(100) as usize)?;
+            if page.records.is_empty() {
+                return Err("journal_export_range_lost");
+            }
+            for record in &page.records {
+                serde_json::to_writer(&mut *output, record).map_err(|_| "journal_export_failed")?;
+                output
+                    .write_all(b"\n")
+                    .map_err(|_| "journal_export_failed")?;
+            }
+            next += page.records.len() as u64;
         }
-        Ok(m.records)
+        Ok(total)
     }
 }
-pub(crate) struct SessionWriter {
+#[derive(Default)]
+struct Pool {
+    writers: VecDeque<DirectWriter>,
+    manifests: BTreeMap<String, (Stamp, Manifest)>,
+    opens: u64,
+}
+#[derive(Clone, Eq, PartialEq)]
+struct Stamp {
+    dev: u64,
+    ino: u64,
+    size: u64,
+    modified: i64,
+    modified_ns: i64,
+    changed: i64,
+    changed_ns: i64,
+}
+pub(crate) struct DirectWriter {
     _guard: File,
     db: Database,
     run: String,
+    stamp: Stamp,
+}
+pub(crate) enum SessionWriter {
+    Direct(Box<DirectWriter>),
+    Shared { root: JournalRoot, run: String },
 }
 impl SessionWriter {
     pub(crate) fn append(&mut self, request: &str, records: &[Record]) -> Result<u64> {
-        append_to(&mut self.db, &self.run, request, records)
+        match self {
+            Self::Direct(writer) => append_to(&mut writer.db, &writer.run, request, records),
+            Self::Shared { root, run } => root.append(run, request, records),
+        }
     }
 }
 fn append_to(db: &mut Database, run: &str, batch_request: &str, records: &[Record]) -> Result<u64> {
@@ -748,4 +802,191 @@ fn read_record(db: &mut Database, index: u64) -> Result<Record> {
         .ok_or("original_not_found")?;
     r.input.text = String::from_utf8(text).map_err(|_| "invalid_journal_utf8")?;
     Ok(r)
+}
+
+fn get_from(db: &mut Database, sequence: u64) -> Result<Record> {
+    let m = read_manifest(db)?;
+    if sequence >= m.records {
+        return Err("record_not_found");
+    }
+    read_record(db, sequence)
+}
+
+fn page_from(db: &mut Database, start: u64, limit: usize) -> Result<Page> {
+    if limit == 0 || limit > 100 {
+        return Err("journal_page_bound");
+    }
+    let m = read_manifest(db)?;
+    let end = m.records.min(start.saturating_add(limit as u64));
+    let mut records = Vec::new();
+    if start >= end {
+        return Ok(Page {
+            records,
+            next: None,
+            total: m.records,
+        });
+    }
+    let after = start.checked_sub(1).map(|i| key(b"m/", i));
+    db.scan_prefix(
+        b"m/",
+        after.as_deref(),
+        (end - start) as usize,
+        |k, value| {
+            if k.len() != 10
+                || u64::from_be_bytes(k[2..].try_into().unwrap()) != start + records.len() as u64
+            {
+                return Err(ojo::Error::Corrupt("journal metadata sequence"));
+            }
+            let record: Record = serde_json::from_slice(value)
+                .map_err(|_| ojo::Error::Corrupt("journal metadata"))?;
+            if record.sequence != start + records.len() as u64
+                || !record.input.text.is_empty()
+                || !opaque(&record.event_id)
+                || !opaque(&record.run_id)
+            {
+                return Err(ojo::Error::Corrupt("journal metadata"));
+            }
+            records.push(record);
+            Ok(())
+        },
+    )
+    .map_err(error)?;
+    if records.len() != (end - start) as usize {
+        return Err("invalid_journal_index");
+    }
+    let mut bytes = 0usize;
+    let mut position = 0;
+    while position < records.len() {
+        let prefix = if records[position].input.indexed {
+            b"v/"
+        } else {
+            b"s/"
+        };
+        let group_start = position;
+        let eligibility = records[position].input.indexed;
+        let mut group_end = position + 1;
+        while group_end < records.len() && records[group_end].input.indexed == eligibility {
+            group_end += 1;
+        }
+        let after = records[position]
+            .sequence
+            .checked_sub(1)
+            .map(|i| key(prefix, i));
+        let mut full = false;
+        let result = db.scan_prefix(
+            prefix,
+            after.as_deref(),
+            group_end - group_start,
+            |k, value| {
+                if k.len() != 10
+                    || u64::from_be_bytes(k[2..].try_into().unwrap()) != records[position].sequence
+                {
+                    return Err(ojo::Error::Corrupt("journal original sequence"));
+                }
+                if bytes + value.len() > MAX_TEXT {
+                    full = true;
+                    return Err(ojo::Error::Invalid("journal page complete"));
+                }
+                records[position].input.text = String::from_utf8(value.to_vec())
+                    .map_err(|_| ojo::Error::Corrupt("journal original UTF-8"))?;
+                bytes += value.len();
+                position += 1;
+                Ok(())
+            },
+        );
+        if full {
+            records.truncate(position);
+            break;
+        }
+        result.map_err(error)?;
+        if position != group_end {
+            return Err("original_not_found");
+        }
+    }
+    let next = start.saturating_add(records.len() as u64);
+    Ok(Page {
+        records,
+        next: (next < m.records).then_some(next),
+        total: m.records,
+    })
+}
+
+fn search_from(db: &mut Database, query: &str, limit: usize) -> Result<Vec<Record>> {
+    if query.is_empty() || query.len() > 4096 || limit == 0 || limit > 100 {
+        return Err("journal_query_bound");
+    }
+    let m = read_manifest(db)?;
+    let terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    if terms.is_empty() || terms.len() > 32 {
+        return Err("journal_query_bound");
+    }
+    let mut matches = Vec::new();
+    let mut failure = None;
+    db.scan(|_, _, k, value| {
+        if failure.is_some() || !k.starts_with(b"v/") || k.len() != 10 {
+            return;
+        }
+        let index = u64::from_be_bytes(k[2..].try_into().unwrap());
+        if index >= m.records {
+            failure = Some("invalid_journal_index");
+            return;
+        }
+        let Some(value) = value else {
+            failure = Some("deleted_journal_original");
+            return;
+        };
+        let Ok(text) = std::str::from_utf8(value) else {
+            failure = Some("invalid_journal_utf8");
+            return;
+        };
+        let lower = text.to_lowercase();
+        if terms.iter().all(|term| lower.contains(term)) {
+            matches.push(index);
+            if matches.len() > limit {
+                matches.remove(0);
+            }
+        }
+    })
+    .map_err(error)?;
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    matches.reverse();
+    let mut records = Vec::new();
+    let mut bytes = 0usize;
+    for index in matches {
+        let record = read_record(db, index)?;
+        bytes = bytes
+            .checked_add(record.input.text.len())
+            .ok_or("search_output_bound")?;
+        if bytes > MAX_TEXT {
+            break;
+        }
+        if !record.input.indexed {
+            return Err("journal_index_eligibility_mismatch");
+        }
+        records.push(record);
+    }
+    Ok(records)
+}
+
+fn finish_from(db: &mut Database, finished: bool) -> Result<Manifest> {
+    let mut m = read_manifest(db)?;
+    m.finished_us = finished.then(now);
+    if !finished {
+        m.archived_us = None;
+        m.last_activity_us = now();
+    }
+    db.commit(
+        ojo::request_id().map_err(error)?,
+        &[Change {
+            key: MANIFEST,
+            value: Some(&encoded_manifest(&m)?),
+        }],
+    )
+    .map_err(error)?;
+    Ok(m)
 }

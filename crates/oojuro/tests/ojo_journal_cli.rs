@@ -427,3 +427,282 @@ fn native_capture_and_record_namespaces_migrate_with_frozen_source_backups() {
         assert_eq!(repeated["records"], 0);
     }
 }
+
+struct OwnerProcess {
+    child: std::process::Child,
+    socket: PathBuf,
+}
+impl OwnerProcess {
+    fn start(f: &Fixture) -> Self {
+        let root = fs::canonicalize(f.root()).unwrap();
+        let socket = PathBuf::from(format!(
+            "/tmp/ojo-journal-{}/{}.sock",
+            unsafe { libc::geteuid() },
+            &blake3::hash(root.as_os_str().as_encoded_bytes()).to_hex()[..32]
+        ));
+        let log = fs::File::create(f.0.join("owner.log")).unwrap();
+        let child = Command::new(BIN)
+            .args(["serve", "--root", root.to_str().unwrap(), "--sync-cloud"])
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
+        let mut owner = Self { child, socket };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Some(status) = owner.child.try_wait().unwrap() {
+                panic!(
+                    "owner exited {status}: {}",
+                    fs::read_to_string(f.0.join("owner.log")).unwrap()
+                );
+            }
+            let output = f.call("status", &[]);
+            if output.status.success()
+                && serde_json::from_slice::<Value>(&output.stdout).unwrap()["owner"]["healthy"]
+                    == true
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "owner handshake timed out"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        owner
+    }
+}
+impl Drop for OwnerProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = fs::remove_file(&self.socket);
+    }
+}
+#[test]
+fn healthy_owner_reuses_handles_routes_capture_queries_and_survives_client_loss() {
+    let f = Fixture::new();
+    ok(f.call("init", &[]));
+    let mut owner = OwnerProcess::start(&f);
+    let input = f.0.join("original.txt");
+    fs::write(&input, "Healthy handle exact café original\n").unwrap();
+    let args = [
+        "--session-id",
+        "owner-session",
+        "--event-id",
+        "owner-event",
+        "--text-file",
+        input.to_str().unwrap(),
+    ];
+    let appended = ok(f.call("record", &args));
+    let run = appended["session"].as_str().unwrap();
+    assert_eq!(ok(f.call("record", &args))["stored"], 0);
+    let opens = ok(f.call("status", &[]))["owner"]["verified_opens"]
+        .as_u64()
+        .unwrap();
+    for _ in 0..5 {
+        assert_eq!(
+            ok(f.call("get", &["--session", run, "--id", "0"]))["input"]["text"],
+            "Healthy handle exact café original\n"
+        );
+        assert_eq!(
+            ok(f.call("timeline", &["--session", run]))["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+    assert_eq!(ok(f.call("status", &[]))["owner"]["verified_opens"], opens);
+    // The healthy writer owns the actual engine file, not just a PID or socket.
+    let key: [u8; 32] = fs::read(f.root().join("key")).unwrap().try_into().unwrap();
+    assert!(
+        ojo::Database::open(
+            f.root().join("journals").join(format!("{run}.ojo")),
+            Some(&key),
+            true
+        )
+        .is_err()
+    );
+    // A response can disappear after durable acceptance. The original event ID
+    // still resolves once and changed content remains a conflict on the owner.
+    fs::write(&input, "changed intent").unwrap();
+    assert!(!f.call("record", &args).status.success());
+    fs::write(&input, "Healthy handle exact café original\n").unwrap();
+    assert_eq!(ok(f.call("record", &args))["stored"], 0);
+    ok(f.call("finish", &["--session", run]));
+    ok(f.call("archive", &["--session", run]));
+    assert_eq!(
+        ok(f.call("get", &["--session", run, "--id", "0"]))["input"]["text"],
+        "Healthy handle exact café original\n"
+    );
+    ok(f.call("archive-policy", &["--enabled", "false"]));
+    ok(f.call("archive-policy", &["--enabled", "true"]));
+    // Drop the local transport after sending a complete immutable write intent.
+    // Retry exactly that intent after observing its durable original.
+    let mut lost = ok(f.call("get", &["--session", run, "--id", "0"]));
+    lost["event_id"] = json!(
+        blake3::hash(b"synthetic-lost-owner-ack")
+            .to_hex()
+            .to_string()
+    );
+    let root_identity: Value =
+        serde_json::from_slice(&fs::read(f.root().join("root.json")).unwrap()).unwrap();
+    let intent = json!({"format":1,"root":root_identity["identity"],"action":{"operation":"Append","run":run,"request":"synthetic-lost-owner-ack","records":[lost]}});
+    let encoded = serde_json::to_vec(&intent).unwrap();
+    {
+        let mut stream = std::os::unix::net::UnixStream::connect(&owner.socket).unwrap();
+        stream
+            .write_all(&(encoded.len() as u32).to_be_bytes())
+            .unwrap();
+        stream.write_all(&encoded).unwrap();
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if ok(f.call("timeline", &["--session", run]))["records"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 2
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "lost-response write was not accepted"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    {
+        use std::io::Read;
+        let mut stream = std::os::unix::net::UnixStream::connect(&owner.socket).unwrap();
+        stream
+            .write_all(&(encoded.len() as u32).to_be_bytes())
+            .unwrap();
+        stream.write_all(&encoded).unwrap();
+        let mut length = [0; 4];
+        stream.read_exact(&mut length).unwrap();
+        let mut body = vec![0; u32::from_be_bytes(length) as usize];
+        stream.read_exact(&mut body).unwrap();
+        let reply: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(reply["value"], 0);
+        assert!(reply["error"].is_null());
+    }
+    let source = f.0.join("sessions");
+    fs::create_dir(&source).unwrap();
+    ok(f.call(
+        "connect",
+        &[
+            "--adapter",
+            "codex",
+            "--source-root",
+            source.to_str().unwrap(),
+            "--accept-local-capture",
+            "--no-service",
+        ],
+    ));
+    fs::write(source.join("rollout-synthetic.jsonl"),format!("{}\n{}\n",json!({"type":"session_meta","payload":{"id":"owner-provider-session"}}),json!({"timestamp":"2026-10-25T00:00:00Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Automatic owner transcript synthetic context"}]}}))).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let matches = ok(f.call("search", &["--query", "Automatic owner transcript"]));
+        if !matches["matches"].as_array().unwrap().is_empty() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "automatic capture timed out: {}",
+            fs::read_to_string(f.0.join("owner.log")).unwrap()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    // A killed owner leaves a stale socket. Both failed handshake and the free
+    // owner lock establish offline fallback; verified file reopen keeps originals.
+    owner.child.kill().unwrap();
+    owner.child.wait().unwrap();
+    assert!(owner.socket.exists());
+    assert_eq!(
+        ok(f.call("get", &["--session", run, "--id", "0"]))["input"]["text"],
+        "Healthy handle exact café original\n"
+    );
+    let replacement = OwnerProcess::start(&f);
+    assert_eq!(
+        ok(f.call("timeline", &["--session", run]))["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    drop(replacement);
+}
+
+fn fake_agent(f: &Fixture) -> PathBuf {
+    let tools = f.0.join("tools");
+    fs::create_dir(&tools).unwrap();
+    let script = tools.join("codex");
+    fs::write(&script,r##"#!/usr/bin/env python3
+import json,os,pathlib,sys
+path=pathlib.Path(os.environ['JOURNAL_SETUP_AGENT_CONFIG'])
+config=json.loads(path.read_text()) if path.exists() else {'unrelated':{'name':'unrelated','transport':{'type':'stdio','command':'preserve','args':[]}}}
+args=sys.argv[1:]
+if args==['mcp','list','--json']: print(json.dumps(list(config.values())))
+elif args[:2]==['mcp','get']:
+ name=args[2]
+ if name not in config:print(f'No MCP server named "{name}". ',file=sys.stderr);sys.exit(1)
+ item=config[name]['transport'];print('Type: stdio\nCommand: '+item['command']+'\nArgs: '+' '.join(item['args']))
+elif args[:2]==['mcp','add']:
+ index=args.index('--');name=args[index-1];launcher=args[index+1:]
+ assert name not in config,'setup must not replace an existing entry'
+ config[name]={'name':name,'enabled':True,'transport':{'type':'stdio','command':launcher[0],'args':launcher[1:],'env':None}}
+ path.write_text(json.dumps(config));os.chmod(path,0o600)
+else:sys.exit(2)
+"##).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    std::os::unix::fs::symlink(&script, tools.join("claude")).unwrap();
+    tools
+}
+#[test]
+fn supported_agents_register_read_only_local_originals_and_preserve_existing_entries() {
+    for adapter in ["codex", "claude-code"] {
+        let f = Fixture::new();
+        let tools = fake_agent(&f);
+        let state = f.0.join("agent.json");
+        let source = f.0.join("sessions");
+        fs::create_dir(&source).unwrap();
+        let connect = || {
+            Command::new(BIN)
+                .args([
+                    "connect",
+                    "--root",
+                    f.root().to_str().unwrap(),
+                    "--adapter",
+                    adapter,
+                    "--source-root",
+                    source.to_str().unwrap(),
+                    "--accept-local-capture",
+                    "--no-service",
+                    "--register-mcp",
+                ])
+                .env(
+                    "PATH",
+                    format!("{}:{}", tools.display(), std::env::var("PATH").unwrap()),
+                )
+                .env("JOURNAL_SETUP_AGENT_CONFIG", &state)
+                .output()
+                .unwrap()
+        };
+        let report = ok(connect());
+        assert_eq!(report["mcp"]["mcp_original_verified"], true);
+        assert_eq!(report["mcp"]["agent_tool_call_verified"], false);
+        let saved = fs::read(&state).unwrap();
+        assert_eq!(ok(connect())["mcp"]["registered"], true);
+        assert_eq!(fs::read(&state).unwrap(), saved);
+        let name = report["mcp"]["server"].as_str().unwrap();
+        let mut changed: Value = serde_json::from_slice(&saved).unwrap();
+        changed[name]["transport"]["command"] = json!("preserve-existing-command");
+        fs::write(&state, serde_json::to_vec(&changed).unwrap()).unwrap();
+        let existing = fs::read(&state).unwrap();
+        assert!(!connect().status.success());
+        assert_eq!(fs::read(&state).unwrap(), existing);
+        assert_eq!(changed["unrelated"]["transport"]["command"], "preserve");
+    }
+}

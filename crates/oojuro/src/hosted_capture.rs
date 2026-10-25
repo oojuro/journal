@@ -1855,7 +1855,7 @@ mod tests {
         use oojuro_engine::record::{Input, Kind};
         let f = Fixture::new();
         let connection = f.api_connection();
-        let root = JournalRoot::init(&f.dir.join("ojo-local"), true).unwrap();
+        let root = JournalRoot::init(&f.dir.join("ojo-local"), true).unwrap().owned();
         let run = "7".repeat(64);
         root.ensure_session(&run, root.identity(), "synthetic/v1", "Local session")
             .unwrap();

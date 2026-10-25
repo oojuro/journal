@@ -447,3 +447,17 @@ pub fn verify_pipeline(
         parser_and_local_durability_verified: true,
     })
 }
+
+/// Setup may race the healthy owner's short capture tick. Only this known busy
+/// condition is retried; source conflicts and uncertain writes retain their errors.
+pub(crate) fn setup_retry<T>(mut action: impl FnMut() -> Result<T>) -> Result<T> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match action() {
+            Err("capture_already_running") if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20))
+            }
+            result => return result,
+        }
+    }
+}
