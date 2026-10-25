@@ -46,3 +46,29 @@ incremental refresh, process reopen and archive/reopen, then removes every fixtu
 and child process. It does not measure transcript ingestion throughput or flush
 the operating system's caches. Run it under the shared benchmark lock. Source
 qualification and published installation are separate operator steps.
+
+The [local qualification receipt](qualification/ojo-journal-search-2026-10-25.json)
+records a release-binary run on an Intel Core Ultra 7 258V with the shared
+benchmark lock. Each scenario initially has 100,000 synthetic 1 KiB originals
+plus one seed, then appends 100 more originals. Twenty warm IPC queries mix a
+rare term, common term and exact identifier; every returned original is checked
+against the independently generated fixture. Five public CLI calls also verify
+complete original text.
+
+| Operation | Encrypted source | Plaintext source |
+| --- | ---: | ---: |
+| Warm owner query, p50 / p95 | 2.66 / 6.19 ms | 2.95 / 4.40 ms |
+| Warm public CLI, five samples | 3.80–5.03 ms | 2.43–5.62 ms |
+| Initial index build and query | 18.70 s | 18.35 s |
+| Append 100 rows, refresh and query | 144.82 ms | 174.16 ms |
+| Owner restart through healthy status and first query | 811.37 ms | 1,267.33 ms |
+| Archived source reopen and query | 824.10 ms | 673.45 ms |
+
+After the increment, the source contains 100,101 records. Archiving changes the
+encrypted source from 193,568,606 to 50,003,590 bytes, and the plaintext source
+from 189,484,166 to 45,927,474 bytes. Derived index files are additional: about
+71.1 MB after that refresh, with about 36.4 MB estimated index heap. These are
+application Event/control/index measurements; they do not establish a storage
+ratio for a generic database or total process memory. Process restart includes
+the service's startup source checks; OS caches were not flushed. Both datasets
+and their service processes were removed after qualification.
