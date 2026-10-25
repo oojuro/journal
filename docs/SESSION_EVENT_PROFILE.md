@@ -84,5 +84,7 @@ acceptance times while preserving every original application timestamp.
 
 The recovery database remains a KV database, readable with the previous engine
 API and the original root key. Export/import is an independent JSONL interchange
-path. Stop recording before manually restoring a recovery database; retaining
+path; importing creates a new engine acceptance clock. Copy/archive the `.juro`
+file to retain original engine cursors and times. Stop recording before manually
+restoring a recovery database; retaining
 the current file separately preserves records accepted after conversion.
