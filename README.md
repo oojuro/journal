@@ -88,6 +88,8 @@ cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p ooj
 python3 scripts/test-connect-agent.py
 python3 scripts/test-connect-project.py
 python3 scripts/test-setup-agent.py
+python3 scripts/test-journal-namespace.py --binary target/debug/ojo-journal
+python3 scripts/test-journal-durability.py --binary target/debug/ojo-journal
 node --test sdk/typescript/test/*.test.js
 ```
 

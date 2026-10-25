@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, VecDeque},
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -144,6 +144,84 @@ fn private_dir(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+fn sync_directory(path: &Path) -> Result<()> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|_| "journal_directory_sync_failed")
+}
+/// A failed mkdir/parent sync can leave a valid, visible path. Confirm every
+/// ancestor again on reopen; an existing pathname is not a durability receipt.
+/// Existing ancestor permissions are validated but never changed.
+fn directory_chain(path: &Path, create: bool) -> Result<()> {
+    if !path.is_absolute()
+        || path
+            .components()
+            .any(|part| !matches!(part, Component::RootDir | Component::Normal(_)))
+    {
+        return Err("absolute_private_path_required");
+    }
+    let uid = unsafe { libc::geteuid() };
+    let chain = path.ancestors().collect::<Vec<_>>();
+    for part in chain.into_iter().rev() {
+        let metadata = match fs::symlink_metadata(part) {
+            Ok(metadata) => metadata,
+            Err(error) if create && error.kind() == std::io::ErrorKind::NotFound => {
+                fs::DirBuilder::new()
+                    .mode(0o700)
+                    .create(part)
+                    .map_err(|_| "journal_root_creation_failed")?;
+                fs::symlink_metadata(part).map_err(|_| "journal_root_creation_failed")?
+            }
+            Err(_) => return Err("private_path_unavailable"),
+        };
+        if !metadata.is_dir()
+            || ![0, uid].contains(&metadata.uid())
+            || metadata.mode() & 0o022 != 0
+                && !(metadata.uid() == 0 && metadata.mode() & 0o1000 != 0)
+        {
+            return Err("unsafe_path_ancestor");
+        }
+        if let Some(parent) = part.parent() {
+            sync_directory(parent)?;
+        }
+    }
+    sync_directory(path)
+}
+/// Read and confirm the same protected inode before using persisted identity or
+/// key material. A prior failed file sync must not become success on retry.
+fn confirmed_private(path: &Path, limit: usize) -> Result<Vec<u8>> {
+    hosted_capture::ancestors(path)?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|_| "private_journal_metadata_required")?;
+    let metadata = file
+        .metadata()
+        .map_err(|_| "private_journal_metadata_required")?;
+    if !metadata.is_file()
+        || metadata.uid() != unsafe { libc::geteuid() }
+        || metadata.nlink() != 1
+        || metadata.mode() & 0o777 != 0o600
+        || metadata.len() > limit as u64
+    {
+        return Err("private_journal_metadata_required");
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "private_journal_metadata_required")?;
+    if bytes.len() > limit {
+        return Err("private_journal_metadata_required");
+    }
+    file.sync_all()
+        .map_err(|_| "journal_metadata_sync_failed")?;
+    Ok(bytes)
+}
 fn error(_: ojo::Error) -> &'static str {
     "ojo_journal_unavailable_or_corrupt"
 }
@@ -176,11 +254,7 @@ impl JournalRoot {
         {
             return Err("legacy_journal_root_requires_explicit_migration_to_a_new_directory");
         }
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(path)
-            .map_err(|_| "journal_root_creation_failed")?;
+        directory_chain(path, true)?;
         private_dir(path)?;
         for part in ["journals", "locks"] {
             let p = path.join(part);
@@ -199,6 +273,9 @@ impl JournalRoot {
         let key_path = path.join("key");
         if encrypted && !key_path.exists() {
             hosted_capture::create_private(&key_path, &ojo::generate_key().map_err(error)?)?;
+        }
+        if encrypted && confirmed_private(&key_path, 32)?.len() != 32 {
+            return Err("invalid_journal_key");
         }
         let cfg = RootConfig {
             format: FORMAT,
@@ -223,7 +300,7 @@ impl JournalRoot {
             private_dir(&path.join(part))?;
         }
         let cfg: RootConfig = serde_json::from_slice(
-            &read_private(&path.join("root.json"), 4096)
+            &confirmed_private(&path.join("root.json"), 4096)
                 .map_err(|_| "private_journal_root_required")?,
         )
         .map_err(|_| "invalid_journal_root")?;
@@ -232,7 +309,7 @@ impl JournalRoot {
         }
         let key = if cfg.encrypted {
             Some(
-                read_private(&path.join("key"), 32)
+                confirmed_private(&path.join("key"), 32)
                     .map_err(|_| "private_journal_key_required")?
                     .try_into()
                     .map_err(|_| "invalid_journal_key")?,
@@ -240,6 +317,12 @@ impl JournalRoot {
         } else {
             None
         };
+        // Confirm app-owned namespace and metadata before any local/remote ACK.
+        // Healthy capture retains this root; this is an open-time barrier.
+        directory_chain(path, false)?;
+        for part in ["journals", "locks"] {
+            sync_directory(&path.join(part))?;
+        }
         Ok(Self {
             path: fs::canonicalize(path).map_err(|_| "journal_root_unavailable")?,
             cfg,

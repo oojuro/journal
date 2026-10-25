@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "base_candidate": "5482b13dab6c46e5be4262b12195e6f027a5323b",
+  "engine_commit": "a49fd108f5acc0b8658a84631c103d3e2e6f7be0",
+  "synthetic_only": true,
+  "regression": {
+    "baseline": "Previously qualified PR10 binary returned a successful raw init despite actual fsync EIO on the parent of newly created ancestors.",
+    "fixed": "Five actual Linux fsync-EIO cases refuse initial and reopened acknowledgements for raw/encrypted ancestor publication and root.json confirmation, plus encrypted key confirmation.",
+    "recovery": "Healthy exact retry succeeds; original metadata, key bytes and all existing modes remain unchanged."
+  },
+  "checks": [
+    {"command": "cargo test --locked --no-default-features -p oojuro --lib ojo_ -- --test-threads=1", "passed": 9},
+    {"command": "cargo test --locked --no-default-features -p oojuro --test ojo_journal_cli -- --test-threads=1", "passed": 6},
+    {"command": "python3 scripts/test-journal-namespace.py --binary /qualified/ojo-journal", "passed_fault_cases": 5},
+    {"command": "python3 scripts/test-journal-durability.py --binary /qualified/ojo-journal", "passed_fault_cases": 2},
+    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0}
+  ],
+  "scope": "Application initialization/reopen barriers only. The healthy owner retains its root. No engine encoding, format, package release, Cloud deployment or performance claim."
+}

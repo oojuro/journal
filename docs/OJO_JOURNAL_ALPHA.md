@@ -6,6 +6,14 @@ private root's `journals/` directory. A separate 0600 local key encrypts origina
 by default. Operational configuration/cursors are private 0600 files. Existing
 compatibility commands and library APIs are preserved.
 
+Initialization creates missing root ancestors with mode0700 and confirms their
+parent directory entries before success. Existing ancestor modes and metadata
+are preserved. Opening a root confirms its protected identity/key files and
+directory chain, so a visible file left after failed sync is not treated as a
+durable initialization receipt. Failure leaves the original material available
+for the same retry. The healthy capture owner pays this barrier when opening the
+root, rather than on every captured event.
+
 ## Local capture and original context
 
 ```sh
