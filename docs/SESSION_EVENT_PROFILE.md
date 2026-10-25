@@ -10,6 +10,14 @@ The first application event's data are exactly
 Event file with another first event is refused as a Journal application file.
 Existing KV session files remain compatible and require explicit conversion.
 
+Open validates this grammar in the engine's existing observed replay, before
+writable tail recovery. Complete application refusal therefore preserves a
+following incomplete tail. It does not scan all original bodies a second time.
+The KV fallback uses a read-only checked callback to validate its complete latest
+manifest, metadata, ID map, eligibility, UTF-8 originals and request-key shapes
+before recovery. Only explicit session initialization may adopt an interrupted
+empty file.
+
 A complete application transaction consists of a Begin event, its declared
 number of original events, and a matching Commit event. Original-event data are
 the exact accepted UTF-8 text bytes, including empty text, NULs and line endings.
@@ -66,6 +74,7 @@ again. Control timestamps are not substituted for original acceptance times.
 `ojo-journal migrate-session --session ID` explicitly converts an existing KV
 session. It first retains and verifies a byte-exact recovery database under the
 root's `format-backups/ID/`, using the original encryption mode and root key.
+The old source is opened read-only, so that copy retains any incomplete tail too.
 Conversion copies every live application key, including retry fingerprints and
 unindexed originals, to an unpublished Event file, verifies values and manifest,
 then replaces the selected session path and confirms its parent. A legacy

@@ -29,7 +29,9 @@ impl JournalRoot {
         }
         let _lock = self.lock(run)?;
         let path = self.session_path(run)?;
-        let mut source = self.open_db(run, true)?;
+        // The old database, including any incomplete tail, is snapshot input.
+        // Read-only validation must precede any recovery or publication.
+        let mut source = self.open_db(run, false)?;
         let manifest = read_manifest(&mut source)?;
         let recovery = self.path.join("format-backups").join(run);
         let report = |converted| FormatMigration {
@@ -38,10 +40,17 @@ impl JournalRoot {
             converted,
             recovery_directory: recovery.is_dir().then(|| recovery.clone()),
         };
-        let Database::Legacy(mut source) = source else {
-            return Ok(report(false));
+        let mut source = match source {
+            Database::Legacy(source) => source,
+            current => {
+                drop(current);
+                // Settle an earlier unknown conversion publication, after the
+                // complete Event/application grammar has been validated.
+                self.open_db(run, true)?.confirm().map_err(error)?;
+                return Ok(report(false));
+            }
         };
-        let checkpoint = source.confirm().map_err(error)?;
+        let checkpoint = source.checkpoint();
         hosted_capture::directory(recovery.parent().ok_or("invalid_recovery_path")?)?;
         hosted_capture::directory(&recovery)?;
         let mut hash = blake3::Hasher::new();
@@ -115,12 +124,10 @@ impl JournalRoot {
             .join(format!(".event-migrate-{identity}.juro"));
         // Only a derived, unpublished conversion is discarded. Source and the
         // fully verified recovery copy remain unchanged through all failures.
-        for obsolete in [&temporary] {
-            match fs::remove_file(obsolete) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => return Err("migration_staging_unavailable"),
-            }
+        match fs::remove_file(&temporary) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("migration_staging_unavailable"),
         }
         sync_directory(path.parent().unwrap())?;
         let mut converted = Database::create(&temporary, self.key.as_ref()).map_err(error)?;

@@ -1,7 +1,7 @@
 use super::Result;
+use super::session_file::SessionFile as Database;
 use crate::{hosted::read_private, hosted_capture};
 use ojo::Change;
-use super::session_file::SessionFile as Database;
 mod format_migration;
 pub use format_migration::FormatMigration;
 use oojuro_engine::record::Input;
@@ -227,7 +227,9 @@ fn confirmed_private(path: &Path, limit: usize) -> Result<Vec<u8>> {
 }
 fn error(error: ojo::Error) -> &'static str {
     match error {
-        ojo::Error::Invalid("pending_journal_batch_requires_original_retry") => "pending_journal_batch_requires_original_retry",
+        ojo::Error::Invalid("pending_journal_batch_requires_original_retry") => {
+            "pending_journal_batch_requires_original_retry"
+        }
         _ => "ojo_journal_unavailable_or_corrupt",
     }
 }
@@ -236,7 +238,10 @@ fn read_manifest(db: &mut Database) -> Result<Manifest> {
         .get(MANIFEST)
         .map_err(error)?
         .ok_or("missing_journal_manifest")?;
-    let m: Manifest = serde_json::from_slice(&bytes).map_err(|_| "invalid_journal_manifest")?;
+    decode_manifest(&bytes)
+}
+pub(super) fn decode_manifest(bytes: &[u8]) -> Result<Manifest> {
+    let m: Manifest = serde_json::from_slice(bytes).map_err(|_| "invalid_journal_manifest")?;
     if m.format != FORMAT || !opaque(&m.run_id) || !opaque(&m.agent_id) || m.records > 3_000_000 {
         return Err("invalid_journal_manifest");
     }
@@ -448,6 +453,9 @@ impl JournalRoot {
         Ok(file)
     }
     fn open_db(&self, run: &str, writable: bool) -> Result<Database> {
+        self.open_db_mode(run, writable, false)
+    }
+    fn open_db_mode(&self, run: &str, writable: bool, initialize_empty: bool) -> Result<Database> {
         let path = self.session_path(run)?;
         let info = fs::symlink_metadata(&path).map_err(|_| "journal_not_found")?;
         if !info.is_file()
@@ -456,7 +464,11 @@ impl JournalRoot {
         {
             return Err("private_journal_file_required");
         }
-        let mut db = Database::open(&path, self.key.as_ref(), writable).map_err(error)?;
+        let mut db = if initialize_empty {
+            Database::open_initializing(&path, self.key.as_ref()).map_err(error)?
+        } else {
+            Database::open(&path, self.key.as_ref(), writable).map_err(error)?
+        };
         // Replay validates bytes, while a prior writer may have lost its sync
         // acknowledgement. Confirm before reconstructed application ACKs or sync staging.
         if writable {
@@ -506,7 +518,7 @@ impl JournalRoot {
         let _lock = self.lock(run)?;
         let path = self.session_path(run)?;
         let mut db = if path.exists() {
-            self.open_db(run, true)?
+            self.open_db_mode(run, true, true)?
         } else {
             Database::create(path, self.key.as_ref()).map_err(error)?
         };

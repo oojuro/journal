@@ -1,7 +1,9 @@
 //! Journal's versioned application grammar over generic timestamp-and-bytes
 //! events. The core knows none of these keys, session fields or commit markers.
 mod grammar;
+mod legacy;
 mod pending;
+mod replay;
 #[cfg(test)]
 mod tests;
 use grammar::{Batch, Cell, PROFILE};
@@ -12,8 +14,8 @@ use ojo::{
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) enum SessionFile {
-    Legacy(Database),
-    Events(Events),
+    Legacy(Box<Database>),
+    Events(Box<Events>),
 }
 pub(super) struct Events {
     journal: Journal,
@@ -27,69 +29,65 @@ impl SessionFile {
     pub fn create(path: impl AsRef<Path>, key: Option<&[u8; 32]>) -> Result<Self> {
         let mut journal = Journal::create(path.as_ref(), key)?;
         let anchor = journal.append(PROFILE)?.cursor;
-        Ok(Self::Events(Events {
+        Ok(Self::Events(Box::new(Events {
             journal,
             values: BTreeMap::new(),
             requests: BTreeMap::new(),
             unfinished: None,
             cached: None,
             anchor: Some(anchor),
-        }))
+        })))
     }
     pub fn open(path: impl AsRef<Path>, key: Option<&[u8; 32]>, writable: bool) -> Result<Self> {
-        let path = path.as_ref();
-        let mut journal = match Journal::open(path, key, writable) {
+        Self::open_with_mode(path.as_ref(), key, writable, false)
+    }
+    pub fn open_initializing(path: &Path, key: Option<&[u8; 32]>) -> Result<Self> {
+        Self::open_with_mode(path, key, true, true)
+    }
+    fn open_with_mode(
+        path: &Path,
+        key: Option<&[u8; 32]>,
+        writable: bool,
+        initialize_empty: bool,
+    ) -> Result<Self> {
+        let mut state = replay::State::default();
+        let mut journal = match Journal::open_observed(path, key, writable, |event| {
+            if matches!(&event, ojo::events::Replay::Finish)
+                && state.anchor.is_none()
+                && !initialize_empty
+            {
+                return Err(Error::Invalid("Journal application profile required"));
+            }
+            state.observe(event)
+        }) {
             Ok(journal) => journal,
             Err(Error::Invalid("Event profile required")) => {
-                return Database::open(path, key, writable).map(Self::Legacy);
+                return Database::open_checked(path, key, writable, |db| {
+                    legacy::validate(db, initialize_empty)
+                })
+                .map(|db| Self::Legacy(Box::new(db)));
             }
             Err(error) => return Err(error),
         };
         if journal.is_empty() && writable {
             // Interrupted application initialization has no accepted originals.
-            journal.append(PROFILE)?;
+            state.anchor = Some(journal.append(PROFILE)?.cursor);
+        }
+        if state.anchor.is_none() {
+            return Err(Error::Invalid("Journal application profile required"));
         }
         let mut file = Events {
             journal,
-            values: BTreeMap::new(),
-            requests: BTreeMap::new(),
-            unfinished: None,
+            values: state.values,
+            requests: state.requests,
+            unfinished: state.unfinished,
             cached: None,
-            anchor: None,
+            anchor: state.anchor,
         };
-        let mut first = true;
-        let mut after = None;
-        loop {
-            let mut events = Vec::new();
-            // One source event at a time keeps raw originals out of the replay
-            // index. Only key locations and bounded current batch metadata stay.
-            let page = file.journal.scan(after, 1, |event| {
-                events.push(event);
-                Ok(())
-            })?;
-            for event in events {
-                if first {
-                    if event.data != PROFILE {
-                        return Err(Error::Invalid("Journal application profile required"));
-                    }
-                    first = false;
-                    file.anchor = Some(event.cursor);
-                } else {
-                    file.observe(event.cursor, &event.data)?;
-                }
-            }
-            after = page.cursor;
-            if !page.has_more {
-                break;
-            }
-        }
-        if first {
-            return Err(Error::Invalid("Journal application profile required"));
-        }
         if writable {
             file.reconcile()?;
         }
-        Ok(Self::Events(file))
+        Ok(Self::Events(Box::new(file)))
     }
     pub fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         match self {
@@ -189,47 +187,8 @@ impl SessionFile {
     }
 }
 impl Events {
-    fn observe(&mut self, cursor: Cursor, data: &[u8]) -> Result<()> {
-        match self.unfinished.take() {
-            None => self.unfinished = Some(Batch::parse(cursor, data)?),
-            Some(mut batch) => {
-                if let Some(intent) = batch.next_intent() {
-                    let original = self
-                        .journal
-                        .get_prepared(intent)?
-                        .ok_or(Error::Corrupt("Journal original intent missing"))?;
-                    if original.cursor != cursor {
-                        return Err(Error::Corrupt("Journal original intent order"));
-                    }
-                }
-                if batch.observe(cursor, data)? {
-                    self.apply(batch)?;
-                } else {
-                    self.unfinished = Some(batch);
-                }
-            }
-        }
-        Ok(())
-    }
     fn apply(&mut self, batch: Batch) -> Result<()> {
-        if self
-            .requests
-            .insert(batch.request, batch.begin_cursor)
-            .is_some()
-        {
-            return Err(Error::Corrupt("duplicate application transaction"));
-        }
-        for (key, cell) in batch.changes {
-            match cell {
-                Some(cell) => {
-                    self.values.insert(key, cell);
-                }
-                None => {
-                    self.values.remove(&key);
-                }
-            }
-        }
-        Ok(())
+        replay::apply(&mut self.values, &mut self.requests, batch)
     }
     fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let Some(cell) = self.values.get(key) else {

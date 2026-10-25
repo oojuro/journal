@@ -64,7 +64,8 @@ impl Batch {
                         return Err(Error::Corrupt("Journal inline value bound"));
                     }
                     let start = reader.position;
-                    reader.take(length)?;
+                    let value = reader.take(length)?;
+                    validate_inline(&key, value)?;
                     changes.push((
                         key,
                         Some(Cell {
@@ -109,6 +110,9 @@ impl Batch {
             if data.len() != original.length || blake3::hash(data).as_bytes() != &original.hash {
                 return Err(Error::Corrupt("Journal original binding"));
             }
+            if std::str::from_utf8(data).is_err() {
+                return Err(Error::Corrupt("Journal original UTF8"));
+            }
             self.changes.push((
                 original.key.clone(),
                 Some(Cell {
@@ -142,6 +146,36 @@ impl Batch {
             .get(self.original_cursors.len())
             .map(|original| &original.intent)
     }
+}
+fn validate_inline(key: &[u8], value: &[u8]) -> Result<()> {
+    use super::super::store::{MAX_METADATA, Record, decode_manifest, opaque};
+    if key == b"manifest" {
+        decode_manifest(value).map_err(|_| Error::Corrupt("Journal manifest grammar"))?;
+    } else if key.starts_with(b"m/") {
+        if key.len() != 10 || value.len() > MAX_METADATA {
+            return Err(Error::Corrupt("Journal metadata bounds"));
+        }
+        let record: Record = serde_json::from_slice(value)
+            .map_err(|_| Error::Corrupt("Journal metadata grammar"))?;
+        if record.sequence != u64::from_be_bytes(key[2..].try_into().unwrap())
+            || !record.input.text.is_empty()
+            || !opaque(&record.event_id)
+            || !opaque(&record.run_id)
+            || !opaque(&record.input.agent_id)
+            || record.adapter.is_empty()
+            || record.adapter.len() > 128
+        {
+            return Err(Error::Corrupt("Journal metadata binding"));
+        }
+    } else if key.starts_with(b"i/") {
+        if key.len() != 66 || value.len() != 8 || !std::str::from_utf8(&key[2..]).is_ok_and(opaque)
+        {
+            return Err(Error::Corrupt("Journal event identity grammar"));
+        }
+    } else if key.starts_with(b"b/") && (key.len() != 34 || value.len() != 32) {
+        return Err(Error::Corrupt("Journal request grammar"));
+    }
+    Ok(())
 }
 pub(super) fn commit(request: [u8; 16], begin: &[u8]) -> Vec<u8> {
     [COMMIT.as_slice(), &request, blake3::hash(begin).as_bytes()].concat()

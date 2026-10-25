@@ -104,7 +104,7 @@ and all existing file bytes and modes remain unchanged.
 ## Generic Event session adoption
 
 The Event application lane advances all seven selected engine packages to one
-immutable source, `3257ae871ff63e39521f39ffc5c3742299fd2c4d`. This includes the
+immutable source, `ad0085ef80b53a0af448f3071d4a10c520b8dabd`. This includes the
 generic Event API, indexed projection API, file/namespace confirmation fixes,
 bounded group durability and exact retained-intent reads. The engine's new zstd
 dependency edge uses the already selected package/version; no registry package

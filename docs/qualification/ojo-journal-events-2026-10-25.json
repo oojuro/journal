@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "product": "ojo-journal",
+  "engine_commit": "ad0085ef80b53a0af448f3071d4a10c520b8dabd",
+  "synthetic_only": true,
+  "storage": {
+    "engine": "wire0.1 + generic Event profile1",
+    "application": "ojo-journal/application-events/1",
+    "originals": "Exact UTF8 bytes in separate engine events; metadata and opaque original intents in preceding authenticated Begin; matching Commit controls app visibility.",
+    "legacy": "Complete latest KV layout validated by a read-only engine callback before writable recovery; no implicit conversion.",
+    "migration": "Read-only original source, byte-exact verified recovery copy including incomplete tail, copied/verified live values and retry bindings, explicit canonical replacement."
+  },
+  "checks": [
+    {"command": "cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p oojuro-proxy -p oojuro -- --test-threads=1", "result": "passed", "scope": "Full compatibility suite before private storage-enum boxing; all affected paths repeated below after boxing."},
+    {"command": "cargo test --locked --no-default-features -p oojuro --lib ojo_ -- --test-threads=1", "passed": 15},
+    {"command": "cargo test --locked --no-default-features -p oojuro --test ojo_journal_cli -- --test-threads=1", "passed": 6},
+    {"command": "python3 scripts/test-journal-namespace.py --binary /qualified/ojo-journal", "passed_fault_cases": 5},
+    {"command": "python3 scripts/test-journal-durability.py --binary /qualified/ojo-journal", "passed_fault_cases": 2},
+    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0},
+    {"command": "python3 scripts/test-install-journal.py", "passed": 6}
+  ],
+  "observed": [
+    "Raw/encrypted torn Begin/original/Commit and lost-ACK cuts retain original engine cursor/time/data and prevent partial visibility or another mutation bypassing an unfinished batch.",
+    "The full16MiB original limit remains available without an envelope reducing it.",
+    "Foreign application markers, malformed complete controls and bad legacy metadata/IDs/eligibility/UTF8/unknown keys refuse without truncating a following incomplete tail.",
+    "Only explicit session initialization adopts an interrupted empty database; ordinary reads preserve it.",
+    "Real transcript capture, local/cloud unknown acknowledgements, owner reuse, CLI/MCP original context, import/export and archive paths pass.",
+    "Explicit migration retains legacy .ojo names, exact old file bytes including incomplete tail, original metadata/text and successful retry mappings."
+  ],
+  "scope": "Event storage/migration foundation only. Persistent application indexing is a separate followup. No publication, deployment, million-record latency or stable-format claim."
+}

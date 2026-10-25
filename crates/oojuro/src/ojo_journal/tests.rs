@@ -71,9 +71,10 @@ fn explicit_kv_event_migration_keeps_recovery_bytes_originals_and_retry_bindings
         let changes = values.iter().map(|(key, value)| ojo::Change { key, value: Some(value) }).collect::<Vec<_>>();
         legacy.commit([83; 16], &changes).unwrap();
         drop(legacy);
-        let old = fs::read(&path).unwrap();
         let expected = root.page(&run, 0, 100).unwrap();
         let before_manifest = serde_json::to_value(root.manifest(&run).unwrap()).unwrap();
+        OpenOptions::new().append(true).open(&path).unwrap().write_all(b"uncommitted legacy tail retained for recovery").unwrap();
+        let old = fs::read(&path).unwrap();
         let report = root.migrate_session(&run).unwrap();
         assert!(report.converted);
         assert!(!canonical.exists(), "explicit migration renamed a legacy filename");
