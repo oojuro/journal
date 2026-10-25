@@ -44,13 +44,18 @@ cloud records and pending intents. Existing local history is excluded when first
 connecting cloud unless you explicitly choose `--include-existing`. Cloud setup
 success requires acknowledgement of the synthetic verification event.
 
-The versioned curl installer is `scripts/install-journal.sh`; the operator publishes
-its checked Linux x86_64 binaries and notices under the `ojo-journal-v0.1.0` release.
-Use the [release page](https://github.com/oojuro/o-journal/releases) to establish
-availability. Source installation works independently of binary publication:
+The [0.1.0 prerelease](https://github.com/oojuro/o-journal/releases/tag/ojo-journal-v0.1.0)
+provides Linux x86_64 binaries and complete dependency notices. The primary binary
+requires glibc 2.39 or newer. Install the checksummed archive with its versioned script:
 
 ```sh
-cargo install --locked --path crates/oojuro --bin ojo-journal
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/oojuro/o-journal/ojo-journal-v0.1.0/scripts/install-journal.sh | sh
+```
+
+Or build the same immutable release from source:
+
+```sh
+cargo install --locked --git https://github.com/oojuro/o-journal --tag ojo-journal-v0.1.0 --bin ojo-journal oojuro
 ```
 
 For the versioned Linux x86_64 release, the repository also serves a Homebrew tap:
@@ -62,6 +67,11 @@ brew install oojuro/journal/ojo-journal
 
 The formula installs the same checksummed release binaries and complete notices.
 Cargo source installation remains available for other supported build targets.
+All three public installation methods passed encrypted recording, exact search
+and archive checks. The [public installation receipt](docs/qualification/ojo-journal-public-0.1-2026-10-25.json)
+records source/archive/binary hashes and the verification limits. Homebrew's
+framework test remains unrun because of the isolated Ruby bootstrap limitation;
+its installed equivalent commands passed directly.
 
 See the [alpha commands, migration and qualification](docs/OJO_JOURNAL_ALPHA.md).
 
