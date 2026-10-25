@@ -84,3 +84,19 @@ for newly created database, session archive and recovery filenames. Existing
 two candidates for one identity are refused. This changes filenames and current
 guidance, not API/CLI names, header magic, wire/profile versions or frozen vectors.
 Earlier source/release/qualification artifacts above retain their original scope.
+
+## Application namespace confirmation
+
+Root initialization now creates and confirms missing ancestors one at a time,
+without changing existing directory modes. Opening the root confirms the same
+protected inodes from which its identity and encryption key were read, then the
+ancestor and session/lock directory entries. This covers application-created
+ancestors beyond the engine file parent's responsibility. Failed synchronization
+refuses success and retains the original metadata/key for retry. The engine pin
+remains unchanged in this application-only followup.
+
+The synthetic Linux namespace regression forces actual fsync EIO for ancestor
+publication, root.json and encryption-key confirmation. It first reproduces an
+incorrect acknowledgement on the previous qualified application, then checks
+that failed init/reopen retries refuse acknowledgements, a healthy retry succeeds
+and all existing file bytes and modes remain unchanged.
