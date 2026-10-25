@@ -1,0 +1,66 @@
+{
+  "format": 1,
+  "release": "https://github.com/oojuro/o-journal/releases/tag/ojo-journal-v0.1.0",
+  "release_kind": "experimental prerelease",
+  "source_commit": "a6eaf39c57f68fc713c6e94cf35dcd38c5baa0ec",
+  "engine_commit": "2d8dfe73a435afda5bc64904664037a23ee4ed7d",
+  "all_seven_engine_packages_one_source": true,
+  "platform": "x86_64-unknown-linux-gnu",
+  "minimum_glibc": {
+    "ojo-journal": "2.39",
+    "compatibility_binaries": "2.34"
+  },
+  "archive": {
+    "name": "ojo-journal-v0.1.0-x86_64-unknown-linux-gnu.tar.gz",
+    "bytes": 18903739,
+    "sha256": "7e159ff27c2c7bba411c93877cb497d8f3c69242f12c30216b71863890b55589"
+  },
+  "binaries_sha256": {
+    "ojo-journal": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4",
+    "oojuro": "baba5936b8ba4c57ff77b063b60ee981109fa367e8578f039d9dc886c8f31581",
+    "oojuro-native": "817ac06558b0c93bc8f959b2c00041d4f1fd278fa49b1d2c80a1c604819ec967",
+    "oojurod": "58f183c84b342fef2322d1b55f4444670a3bde28e170ccec77c7a5c7e860b00e"
+  },
+  "notice_inventory": {
+    "selected_registry_dependencies": 159,
+    "notice_entries_including_rust_and_dictionaries": 467
+  },
+  "public_https": {
+    "release": "https://github.com/oojuro/o-journal/releases/tag/ojo-journal-v0.1.0",
+    "source_commit": "a6eaf39c57f68fc713c6e94cf35dcd38c5baa0ec",
+    "engine_commit": "2d8dfe73a435afda5bc64904664037a23ee4ed7d",
+    "anonymous_https_archive_checksum_and_script_verified": true,
+    "actual_public_installer_passed": true,
+    "all_four_installed_binary_hashes_match": true,
+    "selected_registry_dependencies": 159,
+    "rust_and_dictionary_notices_present": true,
+    "lost_stdout_receipt_retry_no_duplicate_or_byte_change": true,
+    "encrypted_search_get_timeline_and_archive_exact": true,
+    "synthetic_keys_and_datasets_removed": true
+  },
+  "homebrew": {
+    "channel": "homebrew",
+    "actual_public_installation_passed": true,
+    "version": "ojo-journal 0.1.0",
+    "binary_sha256": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4",
+    "release_source": "a6eaf39c57f68fc713c6e94cf35dcd38c5baa0ec",
+    "encrypted_record_search_archive_get_exact": true,
+    "synthetic_dataset_removed": true,
+    "canonical_tap": "https://github.com/oojuro/o-journal",
+    "all_four_binaries_and_notices_verified": true,
+    "formula_framework_test": "Unrun; prior isolated Ruby Prism bootstrap limitation. Equivalent installed commands passed directly."
+  },
+  "cargo": {
+    "channel": "cargo",
+    "actual_public_installation_passed": true,
+    "version": "ojo-journal 0.1.0",
+    "binary_sha256": "21bcfe38041a8c7279b9680a575457c0e1dba4e2edfc1248a770ea9d33e054c4",
+    "release_source": "a6eaf39c57f68fc713c6e94cf35dcd38c5baa0ec",
+    "encrypted_record_search_archive_get_exact": true,
+    "synthetic_dataset_removed": true
+  },
+  "verification_scope": "Actual public installs and owned synthetic encrypted local recording/retry/search/get/timeline/finish/archive. This is not hosted onboarding, provider, scale or performance acceptance.",
+  "source_installer_url": "https://raw.githubusercontent.com/oojuro/o-journal/ojo-journal-v0.1.0/scripts/install-journal.sh",
+  "cargo_command": "cargo install --locked --git https://github.com/oojuro/o-journal --tag ojo-journal-v0.1.0 --bin ojo-journal oojuro",
+  "synthetic_keys_and_datasets_removed": true
+}
