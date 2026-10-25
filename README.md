@@ -53,6 +53,16 @@ availability. Source installation works independently of binary publication:
 cargo install --locked --path crates/oojuro --bin ojo-journal
 ```
 
+For the versioned Linux x86_64 release, the repository also serves a Homebrew tap:
+
+```sh
+brew tap oojuro/journal https://github.com/oojuro/o-journal
+brew install oojuro/journal/ojo-journal
+```
+
+The formula installs the same checksummed release binaries and complete notices.
+Cargo source installation remains available for other supported build targets.
+
 See the [alpha commands, migration and qualification](docs/OJO_JOURNAL_ALPHA.md).
 
 ## Repository boundaries
