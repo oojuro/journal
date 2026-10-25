@@ -29,6 +29,30 @@ impl Events {
             self.journal.confirm()?;
             return Ok(());
         }
+        if changes.iter().any(|change| {
+            change.key != b"manifest"
+                && (change.value.is_none() || self.values.contains_key(change.key))
+        }) {
+            return Err(Error::Conflict);
+        }
+        let mut previous = self
+            .values
+            .range(b"v/".to_vec()..b"w".to_vec())
+            .next_back()
+            .map(|(key, _)| key.clone());
+        for change in changes
+            .iter()
+            .filter(|change| change.key.starts_with(b"v/"))
+        {
+            if change.key.len() != 10
+                || previous
+                    .as_ref()
+                    .is_some_and(|previous| change.key <= previous.as_slice())
+            {
+                return Err(Error::Conflict);
+            }
+            previous = Some(change.key.to_vec());
+        }
         if let Some(batch) = self.unfinished.as_ref() {
             if batch.request != request {
                 return Err(Error::Invalid(

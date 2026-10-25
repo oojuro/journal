@@ -103,6 +103,63 @@ fn explicit_kv_event_migration_keeps_recovery_bytes_originals_and_retry_bindings
 }
 
 #[test]
+fn indexed_search_refreshes_reopens_and_rebuilds_only_disposable_data() {
+    for encrypted in [false, true] {
+        let scratch = Scratch::new();
+        let root = scratch.root(encrypted).owned();
+        let run = "a".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Indexed session").unwrap();
+        let originals = (0..128).map(|n| record(&root, &run, n, if n == 0 || n == 7 { "Exact cobalt café\0 decision\r\n" } else { "ordinary synthetic original" }, n != 0)).collect::<Vec<_>>();
+        for (page, records) in originals.chunks(100).enumerate() {
+            root.append(&run, &format!("indexed-initial-{page}"), records).unwrap();
+        }
+        let source = root.session_path(&run).unwrap();
+        let source_before = fs::read(&source).unwrap();
+        let hits = root.search(&run, "cobalt", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].sequence, 7);
+        assert_eq!(hits[0].input.text, originals[7].input.text);
+        let status = root.owner_status().unwrap().unwrap();
+        assert_eq!(status["search"].as_array().unwrap().len(), 1);
+        assert_eq!(status["search"][0]["rows"], 127);
+        assert_eq!(status["search"][0]["builds"], 1);
+        root.search(&run, "cobalt", 10).unwrap();
+        assert_eq!(root.owner_status().unwrap().unwrap()["search"][0]["builds"], 1);
+        assert_eq!(fs::read(&source).unwrap(), source_before, "search changed authoritative source");
+
+        let additional = record(&root, &run, 128, "second cobalt original", true);
+        root.append(&run, "indexed-append", &[additional]).unwrap();
+        let hits = root.search(&run, "cobalt", 10).unwrap();
+        assert_eq!(hits.len(), 2);
+        assert_eq!(root.owner_status().unwrap().unwrap()["search"][0]["refreshes"], 1);
+        root.finish(&run, true).unwrap();
+        root.archive(&run).unwrap();
+        assert_eq!(root.search(&run, "cobalt", 10).unwrap().len(), 2);
+        let status = root.owner_status().unwrap().unwrap();
+        assert_eq!(status["search"][0]["reopens"], 1, "archive changed the immutable original view");
+        assert_eq!(status["search"][0]["builds"], 0);
+
+        let other = "b".repeat(64);
+        root.ensure_session(&other, root.identity(), "synthetic/v1", "Other session").unwrap();
+        root.append(&other, "other", &[record(&root, &other, 999, "separate cobalt context", true)]).unwrap();
+        assert_eq!(root.search(&other, "cobalt", 10).unwrap().len(), 1);
+        assert_eq!(root.owner_status().unwrap().unwrap()["search"].as_array().unwrap().len(), 1, "multiple retained numeric projections escaped pool admission");
+        drop(root);
+
+        let cache = scratch.0.join("root/search").join(&run);
+        let descriptors = fs::read_dir(&cache).unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.is_file() && fs::metadata(path).unwrap().len() > 0).collect::<Vec<_>>();
+        assert!(!descriptors.is_empty());
+        for descriptor in descriptors { fs::write(descriptor, b"damaged disposable metadata").unwrap(); }
+        let root = JournalRoot::open(&scratch.0.join("root")).unwrap().owned();
+        let source_before = fs::read(&source).unwrap();
+        assert_eq!(root.search(&run, "cobalt", 10).unwrap().len(), 2);
+        assert_eq!(root.owner_status().unwrap().unwrap()["search"][0]["builds"], 1);
+        assert_eq!(fs::read(&source).unwrap(), source_before);
+        assert_eq!(root.get(&run, 7).unwrap().input.text, originals[7].input.text);
+    }
+}
+
+#[test]
 fn raw_and_encrypted_sessions_preserve_originals_retry_conflicts_pages_and_archives() {
     for encrypted in [false, true] {
         let scratch = Scratch::new();
@@ -139,7 +196,7 @@ fn raw_and_encrypted_sessions_preserve_originals_retry_conflicts_pages_and_archi
         assert_eq!(page.records.len(), 3);
         let hits = root.search(&run, "exact café", 100).unwrap();
         assert_eq!(hits.len(), 63);
-        assert_eq!(hits[0].sequence, 63);
+        assert!(hits.iter().any(|record| record.sequence == 63));
         root.finish(&run, true).unwrap();
         let finished = root.manifest(&run).unwrap();
         assert_eq!(

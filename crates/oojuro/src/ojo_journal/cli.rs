@@ -347,7 +347,7 @@ pub fn run() -> Result<()> {
                 }
             }
             emit(
-                &json!({"matches":records,"query_semantics":"case-insensitive AND substrings; newest matching records per session"}),
+                &json!({"matches":records,"query_semantics":"lexical relevance within Event sessions; compatible substrings for legacy KV sessions"}),
             )
         }
         "migrate-session" => {
