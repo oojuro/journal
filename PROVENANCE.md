@@ -139,3 +139,19 @@ prefix. Disposable derived files are encrypted, separately leased and scoped to
 one session. Application session filtering, indexing eligibility and context
 expansion remain in Journal. The [search contract](docs/SESSION_SEARCH.md) records
 first-build, reopen, memory-admission and cross-session limits explicitly.
+
+## Batched projection refresh and selected-original preflight
+
+The next source dependency adoption advances all seven selected engine packages
+together to `9abee38be0acab284bf68aed75f899e9fdbf0906`. It includes bounded
+sorted incremental projection edits and an additive preflight for selected
+original identities and cumulative original-byte budgets. Existing exact
+original materialization, source checks, wire/profile versions and public
+library signatures remain compatible. No registry dependency is added or
+upgraded.
+
+The [adoption receipt](docs/qualification/ojo-journal-originals-plan-pin-2026-10-25.json)
+records the complete synthetic Rust/CLI compatibility suite and strict application
+Clippy check on the frozen pin. A Cloud consumer must advance its direct engine
+and Journal dependencies together. This source change does not replace the
+published 0.1.0 tag/archive, qualify a new binary distribution or deploy Cloud.

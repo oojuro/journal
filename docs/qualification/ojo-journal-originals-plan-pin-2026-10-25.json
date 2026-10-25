@@ -1,0 +1,59 @@
+{
+  "source": "38c01e79f1331a133b0605bd9296e6464183abfd",
+  "commands": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--no-default-features",
+        "--lib",
+        "--tests",
+        "-p",
+        "oojuro-capture",
+        "-p",
+        "oojuro-proxy",
+        "-p",
+        "oojuro",
+        "--",
+        "--test-threads=1"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 306.8824204470002,
+      "log_sha256": "3b425b72c0c4f93d09063b6c17df7986c2ad310374887657872ba6002494b8b6"
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--no-default-features",
+        "-p",
+        "oojuro",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 10.009391372004757,
+      "log_sha256": "4fc397fa5ef92312345ef327306c1bb2d6866c6cb7ecdb12560bc0f704c03ad9"
+    }
+  ],
+  "format": 1,
+  "engine_commit": "9abee38be0acab284bf68aed75f899e9fdbf0906",
+  "source_pin_runtime": "38c01e79f1331a133b0605bd9296e6464183abfd",
+  "passed_tests": 239,
+  "ignored_unrun": 1,
+  "synthetic_only": true,
+  "registry_graph_unchanged": true,
+  "engine_git_packages": 7,
+  "source_wire_or_profile_change": false,
+  "published_release_unchanged": true,
+  "environment": {
+    "TMPDIR": "/tmp",
+    "toolchain": "Rust1.99.1",
+    "shared_build_and_benchmark_lock": true
+  },
+  "scope": "Source dependency adoption and actual full synthetic Rust/CLI compatibility only; no new binary release, host deployment or performance acceptance."
+}
