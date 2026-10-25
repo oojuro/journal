@@ -37,7 +37,7 @@ fn random() -> Result<[u8; 32]> {
         .map_err(|_| "random_unavailable")?;
     Ok(b)
 }
-fn random_id() -> Result<String> {
+pub(crate) fn random_id() -> Result<String> {
     Ok(blake3::hash(&random()?).to_hex().to_string())
 }
 fn origin(value: &str) -> Result<String> {
@@ -55,7 +55,7 @@ fn origin(value: &str) -> Result<String> {
     }
     Ok(u.origin().ascii_serialization())
 }
-fn ancestors(path: &Path) -> Result<()> {
+pub(crate) fn ancestors(path: &Path) -> Result<()> {
     if !path.is_absolute()
         || path
             .components()
@@ -75,7 +75,7 @@ fn ancestors(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-fn directory(path: &Path) -> Result<()> {
+pub(crate) fn directory(path: &Path) -> Result<()> {
     ancestors(path)?;
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => {}
@@ -90,7 +90,7 @@ fn directory(path: &Path) -> Result<()> {
         .and_then(|f| f.sync_all())
         .map_err(|_| "directory_sync_failed")
 }
-fn create_private(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn create_private(path: &Path, bytes: &[u8]) -> Result<()> {
     ancestors(path)?;
     let mut f = OpenOptions::new()
         .create_new(true)
@@ -470,7 +470,7 @@ struct Spool {
     _lock: File,
     state: State,
 }
-fn boundary(file: &mut File, offset: u64) -> Result<String> {
+pub(crate) fn boundary(file: &mut File, offset: u64) -> Result<String> {
     let start = offset.saturating_sub(256);
     file.seek(SeekFrom::Start(start))
         .map_err(|_| "capture_source_io")?;
@@ -479,7 +479,7 @@ fn boundary(file: &mut File, offset: u64) -> Result<String> {
         .map_err(|_| "capture_source_changed")?;
     Ok(blake3::hash(&b).to_hex().to_string())
 }
-fn transcript(path: &Path) -> Result<File> {
+pub(crate) fn transcript(path: &Path) -> Result<File> {
     ancestors(path)?;
     let f = OpenOptions::new()
         .read(true)
@@ -496,7 +496,7 @@ fn transcript(path: &Path) -> Result<File> {
     }
     Ok(f)
 }
-fn scan(root: &Path, format: Format) -> Result<Vec<PathBuf>> {
+pub(crate) fn scan(root: &Path, format: Format) -> Result<Vec<PathBuf>> {
     let mut dirs = vec![root.to_path_buf()];
     let mut files = Vec::new();
     let mut visited = 0;
@@ -602,7 +602,12 @@ impl Spool {
         let s = &spool.state;
         if s.version != client.cfg.version
             || s.sessions.len() > FILE_LIMIT
-            || s.sessions.values().any(|session| session.reuse_journal.as_deref().is_some_and(|id| !opaque(id)))
+            || s.sessions.values().any(|session| {
+                session
+                    .reuse_journal
+                    .as_deref()
+                    .is_some_and(|id| !opaque(id))
+            })
             || s.version == 1 && !s.sessions.is_empty()
             || s.base != client.cfg.base_url
             || s.journal != info.journal
@@ -661,6 +666,36 @@ impl Spool {
     }
     fn flush(&mut self, client: &CaptureClient) -> Result<()> {
         if let Some(batch) = &self.state.pending {
+            #[cfg(target_os = "linux")]
+            {
+                // The supported .ojo original exists before any remote ACK. An
+                // unknown remote outcome retries the same IDs and cannot append
+                // another local record. Existing spool/control compatibility stays.
+                let local =
+                    crate::ojo_journal::JournalRoot::init(&self.dir.join("local-journals"), true)?;
+                let first = batch.events.first().ok_or("invalid_capture_batch")?;
+                if batch
+                    .events
+                    .iter()
+                    .any(|event| event.run_id != first.run_id || event.adapter != first.adapter)
+                {
+                    return Err("mixed_session_capture_batch");
+                }
+                let label = session::name(&client.cfg.label, &self.state.adapter, &first.run_id);
+                local.ensure_session(&first.run_id, &self.state.agent, &first.adapter, &label)?;
+                let records = batch
+                    .events
+                    .iter()
+                    .map(|event| crate::ojo_journal::Record {
+                        sequence: 0,
+                        event_id: event.event_id.clone(),
+                        run_id: event.run_id.clone(),
+                        adapter: event.adapter.clone(),
+                        input: event.input.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                local.append(&first.run_id, &batch.request, &records)?;
+            }
             let info = client.discovery()?;
             if info.agent_id != self.state.agent
                 || info.journal != self.state.journal
@@ -684,7 +719,12 @@ impl Spool {
                     .get(&run)
                     .ok_or("missing_durable_session_mapping")?;
                 if saved.route.is_none() {
-                    let route = client.provision(&info, &run, &saved.label, saved.reuse_journal.as_deref())?;
+                    let route = client.provision(
+                        &info,
+                        &run,
+                        &saved.label,
+                        saved.reuse_journal.as_deref(),
+                    )?;
                     self.state
                         .sessions
                         .get_mut(&run)
@@ -697,7 +737,11 @@ impl Spool {
                     .clone()
                     .ok_or("invalid_session_route")?;
                 route.validate(client, &info, &run)?;
-                if self.state.sessions[&run].reuse_journal.as_deref().is_some_and(|id| id != route.journal) {
+                if self.state.sessions[&run]
+                    .reuse_journal
+                    .as_deref()
+                    .is_some_and(|id| id != route.journal)
+                {
                     return Err("invalid_session_route");
                 }
                 Some(route)
@@ -857,7 +901,7 @@ impl Spool {
         Ok(processed)
     }
 }
-fn context(format: Format, path: &Path) -> FileCtx {
+pub(crate) fn context(format: Format, path: &Path) -> FileCtx {
     let mut ctx = match format {
         Format::Codex => oojuro_capture::codex::new_ctx(path),
         Format::ClaudeCode => oojuro_capture::claude::new_ctx(path),
@@ -917,6 +961,154 @@ fn event(
             attrs: Default::default(),
         },
     })
+}
+/// Shared parser/session identity for the `.ojo` local application path.
+pub(crate) fn journal_run(path: &Path, format: Format, agent: &str) -> Result<String> {
+    session::run(path, format, agent)
+}
+pub(crate) fn journal_name(base: &str, adapter: &str, run: &str) -> String {
+    session::name(base, adapter, run)
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn ensure_journal_connection(
+    path: &Path,
+    base: &str,
+    key_file: &Path,
+    label: &str,
+) -> Result<ApiConnectionInfo> {
+    if !path.exists() {
+        return connect_api(path, base, key_file, label);
+    }
+    let current = CaptureClient::open(path)?;
+    let bytes = read_private(key_file, 4096).map_err(|_| "private_api_key_file_required")?;
+    let key = std::str::from_utf8(&bytes)
+        .map_err(|_| "invalid_connection")?
+        .trim();
+    if current.cfg.version != 2
+        || current.cfg.base_url != origin(base)?
+        || current.cfg.capture_key != key
+    {
+        return Err("existing_cloud_connection_conflict; original connection retained");
+    }
+    Ok(ApiConnectionInfo {
+        journal_mode: "session",
+        local_key_saved: true,
+        reuse_journal: current.cfg.reuse_journal,
+    })
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn journal_record(
+    r: Rec,
+    agent: &str,
+    run: &str,
+    offset: u64,
+    k: usize,
+    line: &[u8],
+    format: Format,
+) -> Result<crate::ojo_journal::Record> {
+    let event = event(r, agent, run, offset, k, line, format)?;
+    Ok(crate::ojo_journal::Record {
+        sequence: 0,
+        event_id: event.event_id,
+        run_id: event.run_id,
+        adapter: event.adapter,
+        input: event.input,
+    })
+}
+
+/// Reuses the supported scoped session transport without exposing any secret.
+#[cfg(target_os = "linux")]
+pub(crate) struct JournalUpload {
+    client: CaptureClient,
+    scope: String,
+}
+#[cfg(target_os = "linux")]
+impl JournalUpload {
+    pub(crate) fn bounded_records(records: &[crate::ojo_journal::Record]) -> Result<usize> {
+        let mut metadata_bytes =
+            serde_json::to_vec(&json!({"format":1,"request_id":"0".repeat(64),"events":[]}))
+                .map_err(|_| "invalid_capture_batch")?
+                .len();
+        let mut text_bytes = 0usize;
+        let mut count = 0;
+        for record in records {
+            record
+                .input
+                .validate()
+                .map_err(|_| "record_metadata_exceeds_cloud_policy; original_retained_locally")?;
+            let mut input = record.input.clone();
+            let length = input.text.len();
+            input.text.clear();
+            let metadata=serde_json::to_vec(&json!({"event_id":record.event_id,"run_id":record.run_id,"adapter":record.adapter,"input":input,"text_length":length})).map_err(|_|"invalid_capture_batch")?;
+            let next_metadata = metadata_bytes + metadata.len() + usize::from(count > 0);
+            if count == 100 || next_metadata > 65536 || text_bytes + length > 16 * MIB {
+                break;
+            }
+            metadata_bytes = next_metadata;
+            text_bytes += length;
+            count += 1;
+        }
+        if count == 0 {
+            return Err("record_exceeds_cloud_envelope; original_retained_locally");
+        }
+        Ok(count)
+    }
+    pub(crate) fn open(connection: &Path) -> Result<Self> {
+        let client = CaptureClient::open(connection)?;
+        if client.cfg.version != 2 {
+            return Err("integration_api_key_connection_required");
+        }
+        let scope = blake3::hash(
+            format!(
+                "ojo-journal/cloud-scope/v1:{}:{}",
+                client.cfg.base_url, client.cfg.credential_id
+            )
+            .as_bytes(),
+        )
+        .to_hex()
+        .to_string();
+        Ok(Self { client, scope })
+    }
+    pub(crate) fn scope(&self) -> &str {
+        &self.scope
+    }
+    pub(crate) fn reuse_journal(&self) -> Option<&str> {
+        self.client.cfg.reuse_journal.as_deref()
+    }
+    pub(crate) fn upload(
+        &self,
+        run: &str,
+        label: &str,
+        request: &str,
+        records: &[crate::ojo_journal::Record],
+        reuse_journal: Option<&str>,
+    ) -> Result<()> {
+        if Self::bounded_records(records)? != records.len() {
+            return Err("capture_batch_envelope_bound");
+        }
+        let info = self.client.discovery()?;
+        let route = self.client.provision(&info, run, label, reuse_journal)?;
+        let events = records
+            .iter()
+            .map(|record| {
+                let mut input = record.input.clone();
+                input.agent_id = info.agent_id.clone();
+                Event {
+                    event_id: record.event_id.clone(),
+                    run_id: run.into(),
+                    adapter: record.adapter.clone(),
+                    input,
+                }
+            })
+            .collect::<Vec<_>>();
+        self.client.send(
+            &Batch {
+                request: request.into(),
+                events,
+            },
+            Some(&route),
+        )
+    }
 }
 /// A retry-safe, unindexed setup marker. It verifies delivery, not automatic transcript coverage.
 pub fn verify_delivery(connection: &Path) -> Result<()> {
@@ -1110,7 +1302,9 @@ mod tests {
                     } else if provisioning {
                         let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
                         let run = request["run_id"].as_str().unwrap();
-                        let journal = request["reuse_journal"].as_str().map(str::to_owned)
+                        let journal = request["reuse_journal"]
+                            .as_str()
+                            .map(str::to_owned)
                             .unwrap_or_else(|| blake3::hash(run.as_bytes()).to_hex().to_string());
                         ps.lock().unwrap().push(request.clone());
                         json!({"format":1,"journal":journal,"source":cfg.source,"agent_id":"a".repeat(64),"run_id":run,"project":"9".repeat(64),"events_url":format!("/api/capture/journals/{journal}/events")})
@@ -1312,13 +1506,30 @@ mod tests {
         let root = f.dir.join("reuse-sessions");
         fs::create_dir(&root).unwrap();
         let first = root.join("rollout-first.jsonl");
-        let header = |run: &str| format!("{}\n", json!({"type":"session_meta","payload":{"id":run}}));
-        fs::write(&first, [header("old-run").as_bytes(), &codex("excluded original history")].concat()).unwrap();
+        let header =
+            |run: &str| format!("{}\n", json!({"type":"session_meta","payload":{"id":run}}));
+        fs::write(
+            &first,
+            [
+                header("old-run").as_bytes(),
+                &codex("excluded original history"),
+            ]
+            .concat(),
+        )
+        .unwrap();
         let spool = f.dir.join("reuse-spool");
         capture(&connection, &spool, &root, "codex", true).unwrap();
-        OpenOptions::new().append(true).open(&first).unwrap().write_all(&codex("pending original")).unwrap();
+        OpenOptions::new()
+            .append(true)
+            .open(&first)
+            .unwrap()
+            .write_all(&codex("pending original"))
+            .unwrap();
         f.provision_lost.store(true, Ordering::SeqCst);
-        assert_eq!(capture(&connection, &spool, &root, "codex", true).err(), Some("session_provision_outcome_unknown"));
+        assert_eq!(
+            capture(&connection, &spool, &root, "codex", true).err(),
+            Some("session_provision_outcome_unknown")
+        );
         let selected = "9".repeat(64);
         let policy = set_policy(&connection, Some(&selected)).unwrap();
         assert!(!policy.access_verified);
@@ -1326,31 +1537,76 @@ mod tests {
         assert!(set_policy(&connection, Some("display name")).is_err());
         assert_eq!(fs::read(&connection).unwrap(), before);
         f.lost.store(true, Ordering::SeqCst);
-        assert_eq!(capture(&connection, &spool, &root, "codex", true).err(), Some("capture_outcome_unknown"));
+        assert_eq!(
+            capture(&connection, &spool, &root, "codex", true).err(),
+            Some("capture_outcome_unknown")
+        );
         let second = root.join("rollout-second.jsonl");
-        fs::write(&second, [header("next-run").as_bytes(), &codex("new selected activity")].concat()).unwrap();
+        fs::write(
+            &second,
+            [
+                header("next-run").as_bytes(),
+                &codex("new selected activity"),
+            ]
+            .concat(),
+        )
+        .unwrap();
         capture(&connection, &spool, &root, "codex", true).unwrap();
         capture(&connection, &spool, &root, "codex", true).unwrap();
-        let state: State = serde_json::from_slice(&fs::read(spool.join("state.json")).unwrap()).unwrap();
+        let state: State =
+            serde_json::from_slice(&fs::read(spool.join("state.json")).unwrap()).unwrap();
         assert_eq!(state.sessions.len(), 2);
-        assert_eq!(state.sessions.values().filter(|session| session.reuse_journal.is_some()).count(), 1);
-        for session in state.sessions.values().filter(|session| session.reuse_journal.is_some()) {
+        assert_eq!(
+            state
+                .sessions
+                .values()
+                .filter(|session| session.reuse_journal.is_some())
+                .count(),
+            1
+        );
+        for session in state
+            .sessions
+            .values()
+            .filter(|session| session.reuse_journal.is_some())
+        {
             assert_eq!(session.route.as_ref().unwrap().journal, selected);
         }
         let requests = f.provisions.lock().unwrap();
-        assert_eq!(requests[0], requests[1], "pending v2 intent never adopts changed local policy");
+        assert_eq!(
+            requests[0], requests[1],
+            "pending v2 intent never adopts changed local policy"
+        );
         assert!(requests[0].get("reuse_journal").is_none());
         assert_eq!(requests.last().unwrap()["reuse_journal"], selected);
         drop(requests);
         let wires = f.wires.lock().unwrap();
         assert_eq!(wires[0], wires[1]);
         drop(wires);
-        assert_eq!(set_policy(&connection, None).unwrap().journal_policy, "new_session");
+        assert_eq!(
+            set_policy(&connection, None).unwrap().journal_policy,
+            "new_session"
+        );
         let third = root.join("rollout-third.jsonl");
-        fs::write(&third, [header("default-again").as_bytes(), &codex("new default activity")].concat()).unwrap();
+        fs::write(
+            &third,
+            [
+                header("default-again").as_bytes(),
+                &codex("new default activity"),
+            ]
+            .concat(),
+        )
+        .unwrap();
         capture(&connection, &spool, &root, "codex", true).unwrap();
         capture(&connection, &spool, &root, "codex", true).unwrap();
-        assert!(f.provisions.lock().unwrap().last().unwrap().get("reuse_journal").is_none());
+        assert!(
+            f.provisions
+                .lock()
+                .unwrap()
+                .last()
+                .unwrap()
+                .get("reuse_journal")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1590,5 +1846,153 @@ mod tests {
         assert_eq!(report.pending, 0);
         assert_eq!(report.tracked_files, 1);
         assert!(Spool::open(&state, &client, &info, &root, Format::Codex).is_err());
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ojo_local_recording_and_cloud_sync_preserve_originals_through_both_unknown_acknowledgements()
+    {
+        use crate::ojo_journal::{JournalRoot, Record, sync_cloud};
+        use oojuro_engine::record::{Input, Kind};
+        let f = Fixture::new();
+        let connection = f.api_connection();
+        let root = JournalRoot::init(&f.dir.join("ojo-local"), true).unwrap();
+        let run = "7".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Local session")
+            .unwrap();
+        let make = |id: &str, text: &str, run: &str| Record {
+            sequence: 0,
+            event_id: id.repeat(64),
+            run_id: run.into(),
+            adapter: "synthetic/v1".into(),
+            input: Input {
+                agent_id: root.identity().into(),
+                parent_id: None,
+                valid_at: 1,
+                kind: Kind::Explicit,
+                tool: None,
+                status: None,
+                exit: None,
+                key: None,
+                text: text.into(),
+                attrs: Default::default(),
+                indexed: true,
+            },
+        };
+        let original = "exact café\0 original\r\ncontext";
+        root.append(&run, "local-first", &[make("8", original, &run)])
+            .unwrap();
+        f.provision_lost.store(true, Ordering::SeqCst);
+        assert_eq!(
+            sync_cloud(&root, &connection, 10).err(),
+            Some("session_provision_outcome_unknown")
+        );
+        f.lost.store(true, Ordering::SeqCst);
+        assert_eq!(
+            sync_cloud(&root, &connection, 10).err(),
+            Some("capture_outcome_unknown")
+        );
+        // Local storage remains writable with a pending/unknown cloud intent.
+        root.append(
+            &run,
+            "local-second",
+            &[make("9", "queued while offline", &run)],
+        )
+        .unwrap();
+        let selected = "6".repeat(64);
+        set_policy(&connection, Some(&selected)).unwrap();
+        let confirmed = sync_cloud(&root, &connection, 10).unwrap();
+        assert_eq!(confirmed.confirmed, 2);
+        assert_eq!(sync_cloud(&root, &connection, 10).unwrap().confirmed, 0);
+        assert_eq!(root.manifest(&run).unwrap().records, 2);
+        assert_eq!(root.get(&run, 0).unwrap().input.text, original);
+        let wires = f.wires.lock().unwrap();
+        assert_eq!(
+            wires[0], wires[1],
+            "unknown ACK retries the exact framed request"
+        );
+        let n = u32::from_be_bytes(wires[0][..4].try_into().unwrap()) as usize;
+        assert_eq!(&wires[0][4 + n..], original.as_bytes());
+        drop(wires);
+        assert!(
+            f.provisions
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|p| p.get("reuse_journal").is_none()),
+            "existing session keeps its original routing intent"
+        );
+        let future = "a".repeat(64);
+        root.ensure_session(&future, root.identity(), "synthetic/v1", "Future session")
+            .unwrap();
+        root.append(&future, "future", &[make("b", "future session", &future)])
+            .unwrap();
+        assert_eq!(sync_cloud(&root, &connection, 10).unwrap().confirmed, 1);
+        assert_eq!(
+            f.provisions.lock().unwrap().last().unwrap()["reuse_journal"],
+            selected
+        );
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ojo_cloud_connect_excludes_old_local_records_and_verifies_a_real_synthetic_capture_ack() {
+        use crate::ojo_journal::{JournalRoot, Record, connect_cloud, sync_cloud, verify_pipeline};
+        use oojuro_engine::record::{Input, Kind};
+        let fixture = Fixture::new();
+        fixture.api_connection();
+        let root = JournalRoot::init(&fixture.dir.join("local-journal"), true).unwrap();
+        let run = "8".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Private old session")
+            .unwrap();
+        let record = Record {
+            sequence: 0,
+            event_id: "9".repeat(64),
+            run_id: run.clone(),
+            adapter: "synthetic/v1".into(),
+            input: Input {
+                agent_id: root.identity().into(),
+                parent_id: None,
+                valid_at: 0,
+                kind: Kind::Explicit,
+                tool: None,
+                status: None,
+                exit: None,
+                key: None,
+                text: "old local history must not be sent".into(),
+                attrs: Default::default(),
+                indexed: true,
+            },
+        };
+        root.append(&run, "old", &[record]).unwrap();
+        connect_cloud(
+            &root,
+            &fixture.base,
+            &fixture.dir.join("key"),
+            "Local agent",
+            false,
+        )
+        .unwrap();
+        let connection = root.path.join("cloud.json");
+        let uploader = JournalUpload::open(&connection).unwrap();
+        let scope = uploader.scope().to_string();
+        let verification = verify_pipeline(&root, "codex", Some(&scope)).unwrap();
+        assert!(verification.synthetic && verification.parser_and_local_durability_verified);
+        assert_eq!(sync_cloud(&root, &connection, 10).unwrap().confirmed, 1);
+        assert_eq!(root.manifest(&run).unwrap().records, 1);
+        let wires = fixture.wires.lock().unwrap();
+        assert_eq!(wires.len(), 1);
+        assert!(!String::from_utf8_lossy(&wires[0]).contains("old local history"));
+        assert!(
+            String::from_utf8_lossy(&wires[0]).contains("Synthetic ojo-journal setup verification")
+        );
+        drop(wires);
+        connect_cloud(
+            &root,
+            &fixture.base,
+            &fixture.dir.join("key"),
+            "Local agent",
+            false,
+        )
+        .unwrap();
+        assert_eq!(sync_cloud(&root, &connection, 10).unwrap().confirmed, 0);
     }
 }

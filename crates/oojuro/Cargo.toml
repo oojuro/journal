@@ -7,6 +7,10 @@ repository.workspace = true
 description = "Oojuro v1 front door: the journal used like SQLite (library API, `oojuro` CLI, MCP server, settings) and the `oojurod` recorder that serves it to other processes"
 
 [[bin]]
+name = "ojo-journal"
+path = "src/bin/ojo-journal.rs"
+
+[[bin]]
 name = "oojuro"
 path = "src/bin/oojuro.rs"
 
@@ -19,6 +23,7 @@ name = "oojuro-native"
 path = "src/bin/oojuro-native.rs"
 
 [dependencies]
+ojo.workspace = true
 base64 = "0.22"
 oojuro-engine = { workspace = true }
 blake3.workspace = true

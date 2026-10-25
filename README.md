@@ -1,33 +1,66 @@
-# Oojuro Journal
+# ojo-journal
 
-Record and search agent activity using the [Oojuro embedded database](https://github.com/oojuro/oojuro).
-This repository owns agent capture, transcript adapters, recording proxies,
-agent/session conventions, the recorder, journal CLI/MCP tools and client SDKs.
+Record agent sessions into portable `.ojo` journals, find a past decision and open
+its exact recorded context. Use it locally without an account, with optional
+scoped delivery to [ojo-cloud](https://oojuro.com).
 
-**Status: source preview.** Extracted from the existing public source at an
-immutable revision; see [provenance](PROVENANCE.md). Engine dependencies are
-pinned in `Cargo.toml` and `ENGINE_REV`; the [current adoption report](docs/ENGINE_PROJECTION_PIN_ADOPTION.md)
-records their source qualification. [Earlier local CLI measurements](docs/ENGINE_LOOKUP_ADOPTION.md)
-retain their original source scope. A separate
-[cached capture search report](docs/LOCAL_CAPTURE_CACHE_OPTIMIZATION.md) measures
-removal of duplicated projection work; the [receipt-read report](docs/LOCAL_RECEIPT_READ_OPTIMIZATION.md)
-measures ordinary reads without an unused search index. The
-[Temporal append report](docs/TEMPORAL_SINGLE_OPEN.md) measures retaining its healthy
-capture handle across policy admission. Existing engine branches and installed
-releases remain available during the repository transition.
+**Experimental alpha source.** The primary `ojo-journal` executable uses the
+standalone `.ojo` engine. Existing `oojuro`, `oojurod` and `oojuro-native` commands
+and directory stores remain compatible. The `.ojo` wire format remains
+experimental; this application does not declare it stable.
+
+```sh
+cargo build --locked -p oojuro --bin ojo-journal
+target/debug/ojo-journal connect --adapter codex --accept-local-capture
+# Use --adapter claude-code for Claude Code.
+target/debug/ojo-journal sessions
+target/debug/ojo-journal search --query "deployment decision"
+```
+
+Connect installs a per-user Linux service, excludes existing transcript history
+by default, and verifies an owned synthetic transcript through the actual parser
+and durable `.ojo` path. It never adds a test line to your agent's transcript.
+Use `--no-service` and `ojo-journal watch --adapter codex` for a foreground process.
+Capture redacts recognized secrets and never reads referenced tool-result files.
+New provider sessions get separate journals; resuming a session keeps its journal.
+
+For optional cloud delivery, pass a protected integration key file to connect:
+
+```sh
+ojo-journal connect --adapter codex --api-key-file /private/integration-key \
+  --accept-local-capture
+```
+
+Keys stay out of command arguments and chat. Local recording continues while the
+network is unavailable. `status` distinguishes durable local records, confirmed
+cloud records and pending intents. Existing local history is excluded when first
+connecting cloud unless you explicitly choose `--include-existing`. Cloud setup
+success requires acknowledgement of the synthetic verification event.
+
+The versioned curl installer is `scripts/install-journal.sh`; the operator publishes
+its checked Linux x86_64 binaries and notices under the `ojo-journal-v0.1.0` release.
+Use the [release page](https://github.com/oojuro/o-journal/releases) to establish
+availability. Source installation works independently of binary publication:
+
+```sh
+cargo install --locked --path crates/oojuro --bin ojo-journal
+```
+
+See the [alpha commands, migration and qualification](docs/OJO_JOURNAL_ALPHA.md).
 
 ## Repository boundaries
 
 | Repository | Responsibility |
 | --- | --- |
-| [oojuro](https://github.com/oojuro/oojuro) | Embedded storage, compression, durability and retrieval; the planned `.ojo` database format |
+| [oojuro](https://github.com/oojuro/oojuro) | Embedded storage, compression, durability and retrieval; the independently versioned `.ojo` database format |
 | [o-journal](https://github.com/oojuro/o-journal) | Agent-specific recording, integrations and history tools |
 | [o-cloud](https://github.com/oojuro/o-cloud) | Managed hosting, sharing, accounts, billing and the `oojuro.com` website |
 | [o-release-operator](https://github.com/oojuro/o-release-operator) | Trusted Oojuro release coordination |
 
-Local agent journals run without a cloud account. `.ojo` is the selected future
-standalone database extension; this source still uses the existing directory
-storage and does not add a standalone container reader/writer.
+The primary application stores one encrypted `.ojo` file per provider session.
+Explicit migration preserves existing directory stores and creates a complete
+encrypted recovery snapshot before converting their records. Compatibility
+commands keep their original formats; no store is silently upgraded.
 
 ## Build and check
 
