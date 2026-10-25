@@ -50,6 +50,59 @@ fn record(root: &JournalRoot, run: &str, n: u64, text: &str, indexed: bool) -> R
 }
 
 #[test]
+fn explicit_kv_event_migration_keeps_recovery_bytes_originals_and_retry_bindings() {
+    for encrypted in [false, true] {
+        let scratch = Scratch::new();
+        let root = scratch.root(encrypted);
+        let run = "9".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Legacy snapshot").unwrap();
+        let originals = vec![record(&root, &run, 90, "Exact café\0 original\r\n", true), record(&root, &run, 91, "private unindexed system original", false)];
+        root.append(&run, "legacy-original-batch", &originals).unwrap();
+        root.finish(&run, true).unwrap();
+        let canonical = root.session_path(&run).unwrap();
+        let path = canonical.with_extension("ojo");
+        fs::rename(&canonical, &path).unwrap();
+        let mut source = super::session_file::SessionFile::open(&path, root.file_key(), false).unwrap();
+        let mut values = Vec::new();
+        source.scan_prefix(b"", None, 100, |key, value| { values.push((key.to_vec(), value.to_vec())); Ok(()) }).unwrap();
+        drop(source);
+        fs::remove_file(&path).unwrap();
+        let mut legacy = ojo::Database::create(&path, root.file_key()).unwrap();
+        let changes = values.iter().map(|(key, value)| ojo::Change { key, value: Some(value) }).collect::<Vec<_>>();
+        legacy.commit([83; 16], &changes).unwrap();
+        drop(legacy);
+        let expected = root.page(&run, 0, 100).unwrap();
+        let before_manifest = serde_json::to_value(root.manifest(&run).unwrap()).unwrap();
+        OpenOptions::new().append(true).open(&path).unwrap().write_all(b"uncommitted legacy tail retained for recovery").unwrap();
+        let old = fs::read(&path).unwrap();
+        let report = root.migrate_session(&run).unwrap();
+        assert!(report.converted);
+        assert!(!canonical.exists(), "explicit migration renamed a legacy filename");
+        let recovery = report.recovery_directory.unwrap();
+        let backups = fs::read_dir(&recovery).unwrap().map(|entry| entry.unwrap().path()).collect::<Vec<_>>();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(&backups[0]).unwrap(), old);
+        let mut recovery_db = ojo::Database::open(&backups[0], root.file_key(), false).unwrap();
+        for (key, value) in &values { assert_eq!(recovery_db.get(key).unwrap().as_ref(), Some(value)); }
+        drop(recovery_db);
+        assert_eq!(serde_json::to_value(root.manifest(&run).unwrap()).unwrap(), before_manifest);
+        let actual = root.page(&run, 0, 100).unwrap();
+        assert_eq!(serde_json::to_vec(&actual.records).unwrap(), serde_json::to_vec(&expected.records).unwrap());
+        assert_eq!(root.append(&run, "legacy-original-batch", &originals).unwrap(), 0);
+        let converted = fs::read(&path).unwrap();
+        assert!(!root.migrate_session(&run).unwrap().converted);
+        assert_eq!(fs::read(&path).unwrap(), converted);
+        let mut journal = ojo::events::Journal::open(&path, root.file_key(), false).unwrap();
+        let mut engine_originals = Vec::new();
+        journal.scan(None, 100, |event| {
+            if originals.iter().any(|record| record.input.text.as_bytes() == event.data) { engine_originals.push(event.data); }
+            Ok(())
+        }).unwrap();
+        assert_eq!(engine_originals.len(), originals.len());
+    }
+}
+
+#[test]
 fn raw_and_encrypted_sessions_preserve_originals_retry_conflicts_pages_and_archives() {
     for encrypted in [false, true] {
         let scratch = Scratch::new();

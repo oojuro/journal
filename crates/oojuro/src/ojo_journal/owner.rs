@@ -63,6 +63,9 @@ pub(crate) enum Action {
     Archive {
         run: String,
     },
+    MigrateSession {
+        run: String,
+    },
     ArchiveIdle {
         time_us: i64,
     },
@@ -301,6 +304,7 @@ fn execute(root: &mut JournalRoot, action: Action) -> Result<Value> {
         Action::Search { run, query, limit } => json!(root.search(&run, &query, limit)?),
         Action::Finish { run, finished } => json!(root.finish(&run, finished)?),
         Action::Archive { run } => json!(root.archive(&run)?),
+        Action::MigrateSession { run } => json!(root.migrate_session(&run)?),
         Action::ArchiveIdle { time_us } => json!(root.archive_idle(time_us)?),
         Action::ArchivePolicy { enabled } => {
             root.set_automatic_archive(enabled)?;

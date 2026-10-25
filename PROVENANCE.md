@@ -60,7 +60,7 @@ pass does not establish million-record Cloud latency or a production deployment.
 
 ## Replayed-prefix confirmation
 
-The current coherent engine pin is
+The replay-confirmation checkpoint used engine pin
 `a49fd108f5acc0b8658a84631c103d3e2e6f7be0`, including the separately versioned
 Event profile foundation and the durable replay/duplicate confirmation fix.
 All seven selected engine packages share that immutable source; registry versions
@@ -100,3 +100,27 @@ publication, root.json and encryption-key confirmation. It first reproduces an
 incorrect acknowledgement on the previous qualified application, then checks
 that failed init/reopen retries refuse acknowledgements, a healthy retry succeeds
 and all existing file bytes and modes remain unchanged.
+
+## Generic Event session adoption
+
+The Event application lane advances all seven selected engine packages to one
+immutable source, `ad0085ef80b53a0af448f3071d4a10c520b8dabd`. This includes the
+generic Event API, indexed projection API, file/namespace confirmation fixes,
+bounded group durability and exact retained-intent reads. The engine's new zstd
+dependency edge uses the already selected package/version; no registry package
+is added or upgraded by this adoption.
+
+New sessions use the separately marked engine Event profile plus Journal's own
+application profile 1. The engine still owns only UTC acceptance time, exact data
+and opaque retrieval/retry bookkeeping. Journal's Begin/Commit grammar owns
+agent metadata and application batch visibility. Original engine intents are
+retained inside the authoritative encrypted Begin, so a lost acknowledgement
+cannot replace a surviving original's time, cursor or bytes. No intent sidecar or
+duplicate plaintext original is introduced.
+
+Existing KV sessions remain usable. Explicit `migrate-session` retains a
+byte-exact, independently verified recovery database before conversion, copies
+originals and retry bindings, verifies the manifest and all live values, then
+confirms canonical replacement. Conversion does not silently rename `.ojo` paths
+or change earlier qualification artifacts. It gives old KV originals new engine
+acceptance times while preserving their application timestamps.
