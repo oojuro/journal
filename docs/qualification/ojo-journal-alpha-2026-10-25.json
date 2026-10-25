@@ -9,29 +9,88 @@
   "node": "24.22.1",
   "synthetic_only": true,
   "checks": [
-    {"command": "TMPDIR=/tmp cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p oojuro-proxy -p oojuro -- --test-threads=1", "passed": 225, "failed": 0, "ignored": 1, "suites": 25},
-    {"command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings", "exit": 0},
-    {"command": "python3 scripts/test-connect-agent.py", "passed": 2},
-    {"command": "python3 scripts/test-connect-project.py", "passed": 3},
-    {"command": "python3 scripts/test-setup-agent.py", "passed": 3},
-    {"command": "python3 scripts/test-install-journal.py", "passed": 4},
-    {"command": "python3 scripts/test_package_native.py", "passed": 6},
-    {"command": "node --test sdk/typescript/test/*.test.js", "passed": 114},
-    {"command": "OOJURO_NATIVE_TEST_BIN=/qualified/package/bin/oojuro-native node --test sdk/temporal/test/*.test.js", "passed": 25, "dependency_setup": "private temporary @oojuro/v2-client link to the checkout SDK; removed after the run"},
-    {"command": "python3 scripts/test-sdk-package.py", "exit": 0},
-    {"command": "scripts/build_journal.sh /fresh/package", "exit": 0, "dependency_inventory_entries": 159},
-    {"command": "scripts/install-journal.sh", "exit": 0, "real_built_archive": true, "exact_unicode_original_after_install": true, "transport": "owned HTTPS curl fixture; public download qualification is separate"}
+    {
+      "command": "TMPDIR=/tmp cargo test --locked --no-default-features --lib --tests -p oojuro-capture -p oojuro-proxy -p oojuro -- --test-threads=1",
+      "passed": 225,
+      "failed": 0,
+      "ignored": 1,
+      "suites": 25
+    },
+    {
+      "command": "cargo clippy --locked --no-default-features -p oojuro --all-targets -- -D warnings",
+      "exit": 0
+    },
+    {
+      "command": "python3 scripts/test-connect-agent.py",
+      "passed": 2
+    },
+    {
+      "command": "python3 scripts/test-connect-project.py",
+      "passed": 3
+    },
+    {
+      "command": "python3 scripts/test-setup-agent.py",
+      "passed": 3
+    },
+    {
+      "command": "python3 scripts/test-install-journal.py",
+      "passed": 4
+    },
+    {
+      "command": "python3 scripts/test_package_native.py",
+      "passed": 6
+    },
+    {
+      "command": "node --test sdk/typescript/test/*.test.js",
+      "passed": 114
+    },
+    {
+      "command": "OOJURO_NATIVE_TEST_BIN=/qualified/package/bin/oojuro-native node --test sdk/temporal/test/*.test.js",
+      "passed": 25,
+      "dependency_setup": "private temporary @oojuro/v2-client link to the checkout SDK; removed after the run"
+    },
+    {
+      "command": "python3 scripts/test-sdk-package.py",
+      "exit": 0
+    },
+    {
+      "command": "scripts/build_journal.sh /fresh/package",
+      "exit": 0,
+      "dependency_inventory_entries": 159
+    },
+    {
+      "command": "scripts/install-journal.sh",
+      "exit": 0,
+      "real_built_archive": true,
+      "exact_unicode_original_after_install": true,
+      "transport": "owned HTTPS curl fixture; public download qualification is separate"
+    }
   ],
   "archive": {
     "name": "ojo-journal-v0.1.0-x86_64-unknown-linux-gnu.tar.gz",
     "sha256": "90a6d6e05da4e2ce7ddeebda064d61db1d06a46c48cd552f9407e73017c6b054",
     "bytes": 18237329,
-    "published": false
+    "published": false,
+    "historical_checkpoint_only": true
   },
   "limits": [
     "Experimental standalone wire 0.1 KV session files; generic Event-profile migration remains explicit follow-up.",
     "Streaming substring search is linear in session history; these checks establish correctness and no timing or capacity claim.",
     "Long-lived owner service and global disk full-text projection remain separate follow-ups.",
     "Live Cloud activation, public artifact installation and Homebrew qualification require release-operator evidence."
+  ],
+  "followup_checks": [
+    {
+      "change": "Persist a new batch request fingerprint even when all events were previously accepted; preserve lifecycle metadata.",
+      "command": "cargo test --locked --no-default-features -p oojuro --lib duplicate_only_new_batch -- --test-threads=1",
+      "passed": 1,
+      "cases": [
+        "raw and encrypted files",
+        "duplicate-only acknowledged intent persists across reopen",
+        "same intent with a different new event conflicts",
+        "original lifecycle and bytes preserved",
+        "retry remains bound after archive"
+      ]
+    }
   ]
 }

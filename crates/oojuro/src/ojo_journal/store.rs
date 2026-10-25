@@ -705,17 +705,18 @@ fn append_to(db: &mut Database, run: &str, batch_request: &str, records: &[Recor
         ));
         added += 1;
     }
-    if added == 0 {
-        return Ok(0);
+    if added > 0 {
+        manifest.records = manifest
+            .records
+            .checked_add(added)
+            .ok_or("journal_record_bound")?;
+        manifest.last_activity_us = now();
+        manifest.finished_us = None;
+        manifest.archived_us = None;
+        changes.push((MANIFEST.to_vec(), encoded_manifest(&manifest)?));
     }
-    manifest.records = manifest
-        .records
-        .checked_add(added)
-        .ok_or("journal_record_bound")?;
-    manifest.last_activity_us = now();
-    manifest.finished_us = None;
-    manifest.archived_us = None;
-    changes.push((MANIFEST.to_vec(), encoded_manifest(&manifest)?));
+    // An acknowledgement binds this request even if every event was already
+    // accepted through another batch. Preserve the journal lifecycle metadata.
     changes.push((batch_key, fingerprint.to_vec()));
     let refs = changes
         .iter()

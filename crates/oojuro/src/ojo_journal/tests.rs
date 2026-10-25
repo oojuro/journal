@@ -233,3 +233,59 @@ fn capture_redacts_secrets_and_rejects_changed_source_without_losing_originals()
     assert_eq!(root.manifest(&run).unwrap().records, 1);
     assert_eq!(root.get(&run, 0).unwrap().input.text, record.input.text);
 }
+
+#[test]
+fn duplicate_only_new_batch_is_durably_bound_without_resuming_an_archived_session() {
+    for encrypted in [false, true] {
+        let scratch = Scratch::new();
+        let root = scratch.root(encrypted);
+        let run = "2".repeat(64);
+        root.ensure_session(&run, root.identity(), "synthetic/v1", "Retry fixture")
+            .unwrap();
+        let original = record(&root, &run, 1, "exact retained original", true);
+        root.append(&run, "original-batch", std::slice::from_ref(&original))
+            .unwrap();
+        root.finish(&run, true).unwrap();
+        root.archive(&run).unwrap();
+        let before = serde_json::to_vec(&root.manifest(&run).unwrap()).unwrap();
+        assert_eq!(
+            root.append(&run, "duplicate-only-ack", std::slice::from_ref(&original))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            serde_json::to_vec(&root.manifest(&run).unwrap()).unwrap(),
+            before
+        );
+        let path = root.session_path(&run).unwrap();
+        let accepted = fs::read(&path).unwrap();
+        let reopened = JournalRoot::open(&root.path).unwrap();
+        assert_eq!(
+            reopened
+                .append(&run, "duplicate-only-ack", std::slice::from_ref(&original))
+                .unwrap(),
+            0
+        );
+        assert_eq!(fs::read(&path).unwrap(), accepted);
+        let changed = record(&reopened, &run, 2, "different event must conflict", true);
+        assert_eq!(
+            reopened
+                .append(&run, "duplicate-only-ack", &[changed])
+                .err(),
+            Some("journal_request_conflict")
+        );
+        assert_eq!(reopened.manifest(&run).unwrap().records, 1);
+        assert_eq!(
+            reopened.get(&run, 0).unwrap().input.text,
+            original.input.text
+        );
+        reopened.archive(&run).unwrap();
+        assert_eq!(
+            JournalRoot::open(&root.path)
+                .unwrap()
+                .append(&run, "duplicate-only-ack", &[original])
+                .unwrap(),
+            0
+        );
+    }
+}
